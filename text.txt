@@ -1,0 +1,28 @@
+ Add in composer.json
+   "laravel/ui": "^3.3", // for login and signup
+    "maatwebsite/excel": "^3.1",
+    "pusher/pusher-php-server": "^7.2",
+    "anandsiddharth/laravel-paytm-wallet": "^2.0",
+    "razorpay/razorpay": "^2.8", 
+    "spatie/laravel-permission": "^5.5",
+    "tymon/jwt-auth": "^1.0.2",
+    "yajra/laravel-datatables": "^1.5",
+    "yajra/laravel-datatables-oracle": "~9.0"
+    "intervention/image": "^2.7", // for uploading image with compresson using Imagick 
+    "josiasmontag/laravel-recaptchav3": "^1.0", 
+        
+
+
+Add this to autoload in composer.json
+
+"files":["app/helpers.php","app/proposal.php"]   
+
+
+
+ Run following commands
+ 
+ php artisan vendor:publish --provider="Tymon\JWTAuth\Providers\LaravelServiceProvider"
+ php artisan vendor:publish --tag=datatables
+ php artisan vendor:publish --provider="Maatwebsite\Excel\ExcelServiceProvider"
+ php artisan vendor:publish --provider="Spatie\Permission\PermissionServiceProvider"
+
