@@ -13,16 +13,21 @@ class AddStatusInCategoriesTable extends Migration
      */
     public function up()
     {
+        // If the categories table doesn't exist, skip this migration
+        if (!Schema::hasTable('categories')) {
+            return;
+        }
+    
         // First: Drop status column if it exists
         if (Schema::hasColumn('categories', 'status')) {
             Schema::table('categories', function (Blueprint $table) {
                 $table->dropColumn('status');
             });
         }
-
-        // Second: Add new status column
+    
+        // Then: Add status column
         Schema::table('categories', function (Blueprint $table) {
-            $table->text('status')->after('slug')->nullable();
+            $table->text('status')->nullable();
         });
     }
 
