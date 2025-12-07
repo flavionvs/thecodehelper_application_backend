@@ -13,7 +13,7 @@ class CreateUserTechnologiesTable extends Migration
      */
     public function up()
     {
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        
 
         $this->down();
         Schema::create('user_technologies', function (Blueprint $table) {
@@ -24,7 +24,7 @@ class CreateUserTechnologiesTable extends Migration
             $table->foreign('technology_id')->references('id')->on('technologies')->onDelete('cascade')->onUpdate('cascade');
             $table->timestamps();
         });
-        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        
 
     }
 
