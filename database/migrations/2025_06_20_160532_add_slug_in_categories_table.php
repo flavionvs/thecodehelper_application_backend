@@ -13,18 +13,24 @@ class AddSlugInCategoriesTable extends Migration
      */
     public function up()
     {
+        // If the categories table doesn't exist (like in this SQLite DB), skip this migration
+        if (!Schema::hasTable('categories')) {
+            return;
+        }
+    
         // First: Drop slug column if it exists
         if (Schema::hasColumn('categories', 'slug')) {
             Schema::table('categories', function (Blueprint $table) {
                 $table->dropColumn('slug');
             });
         }
-
-        // Second: Add new slug column
+    
+        // Then: Add slug column
         Schema::table('categories', function (Blueprint $table) {
-            $table->text('slug')->after('name')->nullable();
+            $table->text('slug')->nullable();
         });
     }
+
 
     public function down()
     {
