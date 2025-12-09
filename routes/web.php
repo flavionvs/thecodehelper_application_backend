@@ -29,11 +29,10 @@ use Illuminate\Support\Facades\Route;
     //     Artisan::call('config:clear');    
     //     return 'Storage Linked';
     // });
-    Route::group(['middleware'=>['HttpsProtocol']], function () {    
-        Auth::routes();    
+    Route::group([], function () {
+        Auth::routes();
         Route::get('/', 'FrontController@index')->name('home');
-        Route::get('/login', 'FrontController@login')->name('home');        
-        
-        Route::get('/apply', 'CartController@apply');        
+        Route::get('/login', 'FrontController@login')->name('home');
+        Route::get('/apply', 'CartController@apply');    
 
     });
