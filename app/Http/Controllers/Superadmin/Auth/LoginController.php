@@ -69,9 +69,11 @@ class LoginController extends Controller
 
     // Check only admin will be logged in
 
-    public function checkSuperadmin($request){
-        $data = User::whereEmail($request->email)->first();
-        if(empty($data) || $data->role != 'Superadmin'){
+    public function checkSuperadmin($request)
+    {
+        $data = \App\Models\User::whereEmail($request->email)->first();
+
+        if (empty($data) || $data->role !== 'Superadmin') {
             return $this->sendFailedLoginResponse($request);
         }
     }
