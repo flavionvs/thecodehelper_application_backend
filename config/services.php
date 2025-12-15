@@ -30,4 +30,19 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Stripe
+    |--------------------------------------------------------------------------
+    |
+    | Stripe configuration for payments and transfers.
+    | Secret key MUST stay backend-only.
+    |
+    */
+
+    'stripe' => [
+        'secret' => env('STRIPE_SECRET_KEY'),
+    ],
+
 ];
+

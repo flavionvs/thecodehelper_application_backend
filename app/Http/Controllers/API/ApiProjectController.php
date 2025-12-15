@@ -431,7 +431,7 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'Please connect your account with stripe first.']);
             }       
 
-            \Stripe\Stripe::setApiKey(env('STRIPE_SECRET'));
+            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
             $account = \Stripe\Account::retrieve(authUser()->stripe_account_id);                                         
             
             if (!authUser()->stripe_account_id || (!isset($account->charges_enabled) || !$account->charges_enabled) || (!isset($account->payouts_enabled) || !$account->payouts_enabled)) {

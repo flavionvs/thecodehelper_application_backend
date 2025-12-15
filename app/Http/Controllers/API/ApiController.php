@@ -318,7 +318,7 @@ class ApiController extends Controller
 
     public function payment(Request $request)
     {
-        Stripe::setApiKey(env('STRIPE_SECRET')); // Your platform's secret key
+        Stripe::setApiKey(config('services.stripe.secret')); // Your platform's secret key
     
         try {
             $apps = Application::find($request->applicationId);
@@ -350,7 +350,7 @@ class ApiController extends Controller
     
     public function payment_old(Request $request)
     {                 
-        Stripe::setApiKey(env('STRIPE_SECRET'));
+        Stripe::setApiKey(config('services.stripe.secret'));
 
         // Validate input (optional but recommended)
         $request->validate([
@@ -417,7 +417,7 @@ class ApiController extends Controller
 
         $user = User::findOrFail(authId());
 
-        Stripe::setApiKey(env('STRIPE_SECRET'));
+        Stripe::setApiKey(config('services.stripe.secret'));
 
         // If the user already has a Stripe account, use it
         if (!$user->stripe_account_id) {

@@ -316,7 +316,7 @@ class ApiUserController extends Controller
   }
 
   public function accountDetails(){    
-    \Stripe\Stripe::setApiKey(env('STRIPE_SECRET'));
+    \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
     if(authUser()->stripe_account_id){
       $account = \Stripe\Account::retrieve(authUser()->stripe_account_id);
     }else{

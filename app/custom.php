@@ -1,7 +1,7 @@
 <?php
 
 function transfer($stripe_account_id, $amount){
-    \Stripe\Stripe::setApiKey(env('STRIPE_SECRET'));
+    \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
     $account = \Stripe\Account::retrieve($stripe_account_id);
         
     
