@@ -6,27 +6,14 @@ use Illuminate\Support\Facades\Schema;
 
 class AddStatusInProjectsTable extends Migration
 {
-    /**
-     * Run the migrations.
-     *
-     * @return void
-     */
     public function up()
     {
-        Schema::table('projects', function (Blueprint $table) {
-            $table->string('status')->after('description')->nullable();
-        });
+        // ✅ status is already created in 2025_03_05_135507_create_projects_table.php
+        // Do nothing to avoid duplicate column errors.
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
-        Schema::table('projects', function (Blueprint $table) {
-            //
-        });
+        // no-op
     }
 }

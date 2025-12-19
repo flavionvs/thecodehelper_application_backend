@@ -6,28 +6,23 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateUserLanguagesTable extends Migration
 {
-    /**
-     * Run the migrations.
-     *
-     * @return void
-     */
     public function up()
     {
         Schema::create('user_languages', function (Blueprint $table) {
             $table->id();
-            $table->integer('user_id');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade')->onUpdate('cascade');
-            $table->string('language');
-            
+
+            // ✅ Must match users.id (bigint unsigned)
+            $table->foreignId('user_id')
+                  ->constrained('users')
+                  ->cascadeOnDelete();
+
+            // ⚠️ Keep as plain column for now (FK can be added later)
+            $table->unsignedBigInteger('language_id');
+
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
         Schema::dropIfExists('user_languages');

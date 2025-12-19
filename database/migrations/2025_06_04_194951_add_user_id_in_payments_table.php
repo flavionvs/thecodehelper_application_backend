@@ -6,29 +6,28 @@ use Illuminate\Support\Facades\Schema;
 
 class AddUserIdInPaymentsTable extends Migration
 {
-    /**
-     * Run the migrations.
-     *
-     * @return void
-     */
     public function up()
     {
-        DB::table('payments')->truncate();
         Schema::table('payments', function (Blueprint $table) {
-            $table->integer('user_id')->after('id');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade')->onUpdate('cascade');
+
+            // ✅ Add user_id with correct type and FK (matches users.id)
+            $table->foreignId('user_id')
+                  ->nullable()
+                  ->after('application_id')
+                  ->constrained('users')
+                  ->cascadeOnDelete();
+
         });
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
         Schema::table('payments', function (Blueprint $table) {
-            //
+
+            // Drop FK then column
+            $table->dropForeign(['user_id']);
+            $table->dropColumn('user_id');
+
         });
     }
 }

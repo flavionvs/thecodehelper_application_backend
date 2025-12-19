@@ -204,7 +204,7 @@ class ApiProjectController extends Controller
                 'title' => 'required',
                 'slug' => 'required|unique:projects,slug',
                 'description' => 'required',
-                'category_id' => 'required|exists:categories,id',
+                'category_id' => 'nullable|exists:categories,id',
                 // 'budget' => 'required',
             ]);
             if ($validator->fails()) {
@@ -212,6 +212,9 @@ class ApiProjectController extends Controller
             }
             $req = request()->except('attachment','completed_on','completion_request');
             $req['user_id'] = authId();
+            $req['status'] = 'pending';
+            $req['payment_status'] = 'unpaid';
+            $req['selected_application_id'] = null;
             if (request()->attachment) {
                 $req['attachment'] = fileSave(request()->attachment, 'upload/project');
             }            

@@ -15,16 +15,24 @@ class CreateApplicationsTable extends Migration
     {
         Schema::create('applications', function (Blueprint $table) {
             $table->id();
-            $table->integer('user_id');
-            $table->foreign('user_id')->references('id')->on('users');
-            $table->unsignedBigInteger('project_id');
-            $table->foreign('project_id')->references('id')->on('projects');
+
+            // ✅ Only define FK once
+            $table->foreignId('user_id')
+                  ->constrained('users')
+                  ->cascadeOnDelete();
+
+            // ✅ Match projects.id (bigint unsigned) + FK once
+            $table->foreignId('project_id')
+                  ->constrained('projects')
+                  ->cascadeOnDelete();
+
             $table->text('user_data')->nullable();
             $table->text('project_data')->nullable();
-            $table->string('status')->default('Pending')->nullable();            
-            $table->timestamps();
-            $table->softDeletes(); // Add this line
 
+            $table->string('status')->default('Pending')->nullable();
+
+            $table->timestamps();
+            $table->softDeletes();
         });
     }
 

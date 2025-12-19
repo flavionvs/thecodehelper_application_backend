@@ -14,7 +14,8 @@ class AddColumnInUsersTable extends Migration
     public function up()
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('stripe_account_id')->after('user_type')->nullable();
+            // users table always has 'email' in Laravel default
+            $table->string('stripe_account_id')->nullable()->after('email');
         });
     }
 
@@ -26,7 +27,8 @@ class AddColumnInUsersTable extends Migration
     public function down()
     {
         Schema::table('users', function (Blueprint $table) {
-            //
+            $table->dropColumn('stripe_account_id');
         });
     }
 }
+

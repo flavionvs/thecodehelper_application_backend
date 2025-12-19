@@ -6,33 +6,34 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateProjectsTable extends Migration
 {
-    /**
-     * Run the migrations.
-     *
-     * @return void
-     */
     public function up()
     {
         Schema::create('projects', function (Blueprint $table) {
             $table->id();
-            $table->integer('user_id');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade')->onUpdate('cascade');
-            $table->integer('category_id');
-            $table->foreign('category_id')->references('id')->on('categories')->onDelete('cascade')->onUpdate('cascade');
+
+            // User who created the project
+            $table->foreignId('user_id')
+                  ->constrained('users')
+                  ->cascadeOnDelete();
+
+            // Category (no FK yet because categories table isn't present)
+            $table->unsignedBigInteger('category_id');
+
             $table->text('title');
             $table->text('description')->nullable();
             $table->string('budget')->nullable();
             $table->text('attachment')->nullable();
             $table->text('tags')->nullable();
+
+            // Workflow fields
+            $table->string('status')->default('pending');
+            $table->unsignedBigInteger('selected_application_id')->nullable();
+            $table->string('payment_status')->default('unpaid');
+
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
         Schema::dropIfExists('projects');

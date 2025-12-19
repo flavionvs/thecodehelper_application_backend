@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class AddIsPublicInUsersTable extends Migration
+class AddStatusFieldsToProjectsTable extends Migration
 {
     /**
      * Run the migrations.
@@ -13,9 +13,8 @@ class AddIsPublicInUsersTable extends Migration
      */
     public function up()
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('profile_status')->after('email')->default('Public');
-        });
+        // ✅ Already handled in 2025_03_05_135507_create_projects_table.php
+        // Do nothing to avoid duplicate columns.
     }
 
     /**
@@ -25,8 +24,7 @@ class AddIsPublicInUsersTable extends Migration
      */
     public function down()
     {
-        Schema::table('users', function (Blueprint $table) {
-            //
-        });
+        // Do nothing
     }
 }
+

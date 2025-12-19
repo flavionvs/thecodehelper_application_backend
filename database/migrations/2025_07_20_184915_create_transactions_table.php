@@ -13,14 +13,20 @@ class CreateTransactionsTable extends Migration
      */
     public function up()
     {
-        $this->down();
         Schema::create('transactions', function (Blueprint $table) {
             $table->id();
-            $table->integer('user_id');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade')->onDelete('cascade');
-            $table->unsignedBigInteger('payment_id');
-            $table->foreign('payment_id')->references('id')->on('payments')->onDelete('cascade')->onDelete('cascade');
-            $table->decimal('amount');
+
+            // ✅ Define FK once (and match users.id)
+            $table->foreignId('user_id')
+                  ->constrained('users')
+                  ->cascadeOnDelete();
+
+            // ✅ Define FK once (and match payments.id)
+            $table->foreignId('payment_id')
+                  ->constrained('payments')
+                  ->cascadeOnDelete();
+
+            $table->decimal('amount', 10, 2);
             $table->timestamps();
         });
     }
@@ -35,3 +41,4 @@ class CreateTransactionsTable extends Migration
         Schema::dropIfExists('transactions');
     }
 }
+

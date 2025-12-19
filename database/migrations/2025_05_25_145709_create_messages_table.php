@@ -14,14 +14,21 @@ class CreateMessagesTable extends Migration
     public function up()
     {
         Schema::create('messages', function (Blueprint $table) {
-            $table->integer('id')->autoIncrement();
-            $table->integer('from');
-            $table->integer('to');
+            // ✅ Laravel standard primary key (bigint unsigned)
+            $table->id();
+
+            // ✅ Must match users.id (bigint unsigned)
+            $table->unsignedBigInteger('from');
+            $table->unsignedBigInteger('to');
+
             $table->text('message')->nullable();
             $table->text('file')->nullable();
             $table->integer('is_read')->default(0);
-            $table->foreign('from')->references('id')->on('users');
-            $table->foreign('to')->references('id')->on('users');
+
+            // ✅ Foreign keys
+            $table->foreign('from')->references('id')->on('users')->cascadeOnDelete();
+            $table->foreign('to')->references('id')->on('users')->cascadeOnDelete();
+
             $table->timestamps();
         });
     }
@@ -36,3 +43,4 @@ class CreateMessagesTable extends Migration
         Schema::dropIfExists('messages');
     }
 }
+

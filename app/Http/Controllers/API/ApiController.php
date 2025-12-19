@@ -89,7 +89,8 @@ class ApiController extends Controller
                                ->leftJoin('categories','categories.id','projects.category_id')
                                 ->select(
                                     'projects.*',
-                                    'applications.status as project_status',
+                                    'projects.status as project_status',
+                                    'applications.status as application_status',
                                     'categories.name as category',  
                                     DB::raw('(SELECT COUNT(*) FROM applications WHERE applications.project_id = projects.id) as application')
                                     )
@@ -100,7 +101,7 @@ class ApiController extends Controller
                                     $q->where('applications.user_id',authId());
                                 })
                                 ->where('applications.status','!=','Cancelled')
-                                ->orderByDESC('id')
+                                ->orderByDESC('projects.id')
                                 ->take(5)
                                 ->get();
         $prjects = [];

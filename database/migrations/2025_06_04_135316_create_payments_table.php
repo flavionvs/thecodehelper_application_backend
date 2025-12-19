@@ -6,30 +6,25 @@ use Illuminate\Support\Facades\Schema;
 
 class CreatePaymentsTable extends Migration
 {
-    /**
-     * Run the migrations.
-     *
-     * @return void
-     */
     public function up()
     {
         Schema::create('payments', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('application_id');
-            $table->foreign('application_id')->references('id')->on('applications')->onDelete('cascade')->onUpdate('cascade');
-            $table->decimal('amount')->nullable();
+
+            // ✅ Match applications.id (bigint unsigned) and create FK once
+            $table->foreignId('application_id')
+                  ->constrained('applications')
+                  ->cascadeOnDelete();
+
+            $table->decimal('amount', 10, 2)->nullable();
             $table->string('paymentIntentId')->nullable();
             $table->string('paymentStatus')->nullable();
             $table->text('paymentDetails')->nullable();
+
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
         Schema::dropIfExists('payments');
