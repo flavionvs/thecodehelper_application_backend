@@ -116,7 +116,7 @@ class ApiProjectController extends Controller
             $array['tags'] = $item->tags;
 
             // ✅ FIX: Project status should come from projects table (not application status)
-            $array['status'] = $item->status ?? 'pending';
+            $array['status'] = ucfirst($item->status ?? 'pending');
 
             // ✅ Optional: expose application status separately (useful for UI)
             $array['application_status'] = $current_status->status ?? 'Pending';
