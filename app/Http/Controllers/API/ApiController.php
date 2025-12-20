@@ -32,7 +32,6 @@ use Stripe\AccountLink;
 
 use Stripe\PaymentIntent;
 
-
 class ApiController extends Controller
 {
     public function dashboard(){
@@ -49,34 +48,30 @@ class ApiController extends Controller
                         ->where('applications.status', 'Pending')
                         ->get()
                         ->count();
-                        // ->select(
-                        //     DB::raw("CASE WHEN applications.status = 'Approved' THEN 1 ELSE 0 END as approved_projects"),
-                        //     DB::raw("CASE WHEN applications.status = 'Pending' THEN 1 ELSE 0 END as applied_projects")
-                        // )
-                        // ->first();
+
             $message = DB::table('messages')->where('to', authId())->where('is_read', 0)->count();
             $data['freelancer_approved_projects'] = $approved_projects;
             $data['freelancer_applied_projects'] = $applied_projects;
             $data['freelancer_message_count'] = $message;
-        }else{            
+        }else{
             $approved_projects = DB::table('applications')
-                        ->join('projects', 'projects.id', 'applications.project_id')                    
+                        ->join('projects', 'projects.id', 'applications.project_id')
                         ->where('projects.user_id', authId())
                         ->where('applications.status', 'Approved')
                         ->get()
-                        ->count();                        
+                        ->count();
             $in_progress_projects = DB::table('applications')
-                        ->join('projects', 'projects.id', 'applications.project_id')                    
+                        ->join('projects', 'projects.id', 'applications.project_id')
                         ->where('projects.user_id', authId())
                         ->whereIn('applications.status', ['Approved','Completion Requested'])
                         ->get()
-                        ->count();                        
+                        ->count();
             $completed_projects = DB::table('applications')
-                        ->join('projects', 'projects.id', 'applications.project_id')                    
+                        ->join('projects', 'projects.id', 'applications.project_id')
                         ->where('projects.user_id', authId())
                         ->where('applications.status', 'Completed')
                         ->get()
-                        ->count();                        
+                        ->count();
             $projects = DB::table('projects')->where('user_id', authId())->get()->count();
             $message = DB::table('messages')->where('to', authId())->where('is_read', 0)->count();
             $data['client_projects'] = $projects;
@@ -84,14 +79,14 @@ class ApiController extends Controller
             $data['client_project_completed'] = $completed_projects;
             $data['client_message_count'] = $message;
         }
-         
+
         $project = Application::join('projects','projects.id','applications.project_id')
                                ->leftJoin('categories','categories.id','projects.category_id')
                                 ->select(
                                     'projects.*',
                                     'projects.status as project_status',
                                     'applications.status as application_status',
-                                    'categories.name as category',  
+                                    'categories.name as category',
                                     DB::raw('(SELECT COUNT(*) FROM applications WHERE applications.project_id = projects.id) as application')
                                     )
                                 ->when(auth()->user()->role == 'Client', function($q){
@@ -105,7 +100,7 @@ class ApiController extends Controller
                                 ->take(5)
                                 ->get();
         $prjects = [];
-        foreach ($project as $item) {              
+        foreach ($project as $item) {
             $array['id'] = $item->id;
             $array['category_id'] = $item->category_id;
             $array['category'] = $item->category;
@@ -115,15 +110,16 @@ class ApiController extends Controller
             $array['budget'] = $item->budget;
             $array['tags'] = $item->tags;
             $array['created_at'] = dateFormat($item->created_at);
-            $array['status'] = $item->project_status;            
+            $array['status'] = $item->project_status;
             $array['application'] = $item->application ?? 0;
             $prjects[] = $array;
         }
-        $notificaiton = Notification::where('user_id', authId())->orderByDESC('id')->get();     
+        $notificaiton = Notification::where('user_id', authId())->orderByDESC('id')->get();
         return response()->json(['status' => true, 'message' => 'Success', 'data' => $data, 'projects' => $prjects, 'notification' => $notificaiton]);
     }
+
     public function category()
-    {      
+    {
       $category = DB::table('categories')
                         ->when(request()->type, function($q){
                             $q->join('projects', 'projects.category_id', '=', 'categories.id');
@@ -142,11 +138,12 @@ class ApiController extends Controller
                 'slug' => $item->slug,
             ];
         }
-      }    
+      }
       return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
-    }     
+    }
+
     public function technology()
-    {      
+    {
       $category = DB::table('technologies')->where('status', 'Active')->orderBy('name','asc')->get();
       $data = [];
       if($category){
@@ -156,11 +153,12 @@ class ApiController extends Controller
                 'name' => $item->name,
             ];
         }
-      }    
+      }
       return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
-    }     
+    }
+
     public function langs()
-    {      
+    {
       $langs = DB::table('langs')->where('status', 'Active')->orderBy('name','asc')->get();
       $data = [];
       if($langs){
@@ -170,11 +168,12 @@ class ApiController extends Controller
                 'name' => $item->name,
             ];
         }
-      }    
+      }
       return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
-    }     
+    }
+
     public function programmingLanguage()
-    {      
+    {
       $programming_languages = DB::table('programming_languages')->where('status', 'Active')->get();
       $data = [];
       if($programming_languages){
@@ -184,108 +183,128 @@ class ApiController extends Controller
                 'name' => $item->name,
             ];
         }
-      }    
-      return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
-    }     
-
-    public function filter(){
-      // dd(Cache::get('req'));
-      // Cache::forget('req');
-      // Cache::put('req', request()->all());
-      $category_slug = request()->category != 'All' ? request()->category : null;
-    //   return $category_slug;
-      $category_id = null;
-      if($category_slug){
-        $category = DB::table('categories')->where('slug', $category_slug)->first();
-        $category_id = $category->id ?? null;
       }
-      $price_range = request()->price_range != 'All' ? request()->price_range : null;            
-      $project = Project::select('projects.*')
-                        ->when($price_range, function($q) use($price_range){                                                        
-                          $min_price = explode('-',$price_range)[0] ?? null;
-                          $max_price = explode('-',$price_range)[1] ?? null;  
-                               $q->where('selling_price', '>=', $min_price);                            
-                              $q->where('selling_price', '<=', $max_price);                            
-                        })
-                    
-                        ->when($category_id, function($q) use($category_id){                              
-                              $q->where('category_id', $category_id);                            
-                        })                                           
-                        ->when(request()->search, function($q){                              
-                              $q->where('projects.title', 'like','%'.request()->search.'%');                            
-                        })                                                                                                                                                  
-                        ->when(request()->sort == 'order_by_desc', function($q){                            
-                              $q->orderBy('id', 'desc');                            
-                        })
-                        ->when(request()->sort == 'order_by_asc', function($q){                            
-                              $q->orderBy('id', 'asc');                            
-                        })
-                        ->when(request()->sort == 'z_to_a', function($q){                            
-                              $q->orderBy('name', 'desc');                            
-                        })
-                        ->when(request()->sort == 'a_to_z', function($q){                            
-                              $q->orderBy('name', 'asc');                            
-                        })
-                        ->orderByDESC('projects.id')
-                        ->groupBy('projects.id')
-                        ->paginate(request()->entries ?? 10);                                                    
-      $page = page($project);   
-      if(request()->page >= $page['last_page']+1){
-          return response()->json(['status' => false]);
-      }            
-      $data = [];
+      return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
+    }
+
+    // ✅ FIXED: filter now returns id + route_id + applied (and keeps old behavior)
+    public function filter()
+    {
+        $category_slug = request()->category != 'All' ? request()->category : null;
+        $category_id = null;
+
+        if ($category_slug) {
+            $category = DB::table('categories')->where('slug', $category_slug)->first();
+            $category_id = $category->id ?? null;
+        }
+
+        $price_range = request()->price_range != 'All' ? request()->price_range : null;
+
+        $project = Project::select('projects.*')
+            ->when($price_range, function ($q) use ($price_range) {
+                $min_price = explode('-', $price_range)[0] ?? null;
+                $max_price = explode('-', $price_range)[1] ?? null;
+                if ($min_price !== null) $q->where('selling_price', '>=', $min_price);
+                if ($max_price !== null) $q->where('selling_price', '<=', $max_price);
+            })
+            ->when($category_id, function ($q) use ($category_id) {
+                $q->where('category_id', $category_id);
+            })
+            ->when(request()->search, function ($q) {
+                $q->where('projects.title', 'like', '%' . request()->search . '%');
+            })
+            ->when(request()->sort == 'order_by_desc', function ($q) {
+                $q->orderBy('id', 'desc');
+            })
+            ->when(request()->sort == 'order_by_asc', function ($q) {
+                $q->orderBy('id', 'asc');
+            })
+            ->when(request()->sort == 'z_to_a', function ($q) {
+                $q->orderBy('name', 'desc');
+            })
+            ->when(request()->sort == 'a_to_z', function ($q) {
+                $q->orderBy('name', 'asc');
+            })
+            ->orderByDesc('projects.id')
+            ->groupBy('projects.id')
+            ->paginate(request()->entries ?? 10);
+
         $page = page($project);
+
+        if (request()->page >= $page['last_page'] + 1) {
+            return response()->json(['status' => false]);
+        }
+
+        // ✅ Use user_id if frontend sends it, otherwise fallback to auth user
+        $viewerId = request()->user_id ?: (auth()->check() ? authId() : null);
+
+        $data = [];
         if ($project) {
-            foreach ($project as $item) {          
-                     
-                $applied = Application::where('user_id', request()->user_id)->where('project_id',$item->id)->first();
-                $array['id'] = $item->id;
+            foreach ($project as $item) {
+
+                // applied check (safe)
+                $applied = false;
+                if ($viewerId) {
+                    $applied = Application::where('user_id', $viewerId)
+                        ->where('project_id', $item->id)
+                        ->exists();
+                }
+
+                $array = [];
+                $array['id'] = $item->id;                 // business id
+                $array['route_id'] = $item->my_row_id;    // ✅ REQUIRED for frontend modal
                 $array['category_id'] = $item->category_id;
                 $array['title'] = $item->title;
                 $array['slug'] = $item->slug;
                 $array['description'] = $item->description;
                 $array['budget'] = $item->budget;
                 $array['application'] = $item->application && $item->application->count() ?? 0;
-                $array['attachment'] = $item->attachment;                
+                $array['attachment'] = $item->attachment;
                 $array['category'] = $item->category->name ?? null;
-                $array['created_at'] = timeFormat($item->created_at);                
-                $array['applied'] = $applied ? true : false;                
+                $array['created_at'] = timeFormat($item->created_at);
+                $array['applied'] = $applied ? true : false;
+
                 $data[] = $array;
             }
         }
-        return response()->json(['status' => true, 'message' => 'Projects fetched successfully!', 'page' => $page, 'data' => $data]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Projects fetched successfully!',
+            'page' => $page,
+            'data' => $data
+        ]);
     }
 
-    public function projectDetail($slug){        
-        $project = Project::where('slug',$slug)->first();                
+    public function projectDetail($slug){
+        $project = Project::where('slug',$slug)->first();
         $data['id'] = $project->id;
         $data['category_id'] = $project->category_id;
         $data['title'] = $project->title;
         $data['description'] = $project->description;
         $data['budget'] = $project->budget;
         $data['application'] = $project->application && $project->application->count() ?? 0;
-        $data['attachment'] = $project->attachment;        
+        $data['attachment'] = $project->attachment;
         $data['category'] = $project->category->name ?? null;
-        $data['created_at'] = dateFormat($project->created_at);                
+        $data['created_at'] = dateFormat($project->created_at);
 
         return response()->json(['status' => true, 'message' => 'Projects fetched successfully!', 'data' => $data]);
-    
     }
 
     public function updateProfile(){
       try{
-        $validator = Validator::make(request()->all(), [            
+        $validator = Validator::make(request()->all(), [
           'name' => 'required',
-          'shop_name' => 'required',          
-        ]);      
-        if ($validator->fails()) {            
+          'shop_name' => 'required',
+        ]);
+        if ($validator->fails()) {
           return response()->json(array('status'=>'Validator Failed', 'errors' => $validator->getMessageBag()->toArray()));
-        } 
+        }
         $rule['name'] = 'required';
-        $rule['phone'] = 'required|digits:10|unique:users,email,' . authId();               
+        $rule['phone'] = 'required|digits:10|unique:users,email,' . authId();
         $user = User::find(authId());
         $user->first_name = request()->name;
-        $user->shop_name = request()->shop_name;                   
+        $user->shop_name = request()->shop_name;
         if (request()->image) {
             $user->image = fileSave(request()->image, 'upload/images/profile', $user->image);
         }
@@ -306,25 +325,24 @@ class ApiController extends Controller
             'country' => request()->country,
             'city' => request()->city,
             'district' => request()->district,
-            'state' => request()->state,                             
-         ]);             
+            'state' => request()->state,
+         ]);
         DB::commit();
-        return response()->json(['status' => true, 'message' => 'Profile updated successfully']);        
+        return response()->json(['status' => true, 'message' => 'Profile updated successfully']);
         }catch(\Exception $e){
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => showError($e)]);            
+            return response()->json(['status' => false, 'message' => showError($e)]);
         }
     }
-  
 
     public function payment(Request $request)
     {
         Stripe::setApiKey(config('services.stripe.secret')); // Your platform's secret key
-    
+
         try {
             $apps = Application::find($request->applicationId);
             $paymentIntent = PaymentIntent::create([
-                'amount' => roundOff($apps->total_amount) * 100, // $1.00 in cents
+                'amount' => roundOff($apps->total_amount) * 100,
                 'currency' => 'usd',
                 'payment_method' => $request->paymentMethod,
                 'confirm' => true,
@@ -332,9 +350,9 @@ class ApiController extends Controller
                     'enabled' => true,
                     'allow_redirects' => 'never',
                 ],
-            ]);            
-            if ($paymentIntent->status === 'succeeded') {                
-                    return response()->json(['status' => true, 'message' => 'Payment succeeded!', 'paymentIntent' => $paymentIntent]);                
+            ]);
+            if ($paymentIntent->status === 'succeeded') {
+                return response()->json(['status' => true, 'message' => 'Payment succeeded!', 'paymentIntent' => $paymentIntent]);
             } elseif ($paymentIntent->status === 'requires_action') {
                 return response()->json([
                     'requires_action' => true,
@@ -343,17 +361,16 @@ class ApiController extends Controller
             } else {
                 return response()->json(['error' => 'Payment failed or pending']);
             }
-    
+
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()]);
         }
     }
-    
+
     public function payment_old(Request $request)
-    {                 
+    {
         Stripe::setApiKey(config('services.stripe.secret'));
 
-        // Validate input (optional but recommended)
         $request->validate([
             'paymentMethod' => 'required|string',
             'amount' => 'required|numeric',
@@ -362,11 +379,9 @@ class ApiController extends Controller
 
         try {
             $paymentIntent = PaymentIntent::create([
-                'amount' => $request->amount * 100, // Convert to cents
+                'amount' => $request->amount * 100,
                 'currency' => 'usd',
                 'payment_method' => $request->paymentMethod,
-                // 'confirmation_method' => 'manual',
-                // 'confirm' => false,
             ]);
 
             return response()->json([
@@ -383,20 +398,20 @@ class ApiController extends Controller
 
     public function payments()
     {
-        $payments = Payment::where('user_id', authId())                        
+        $payments = Payment::where('user_id', authId())
                         ->orderByDESC('id')
                         ->paginate(10);
         $data = [];
         $page = page($payments);
         if ($payments) {
-            foreach ($payments as $item) {                                
+            foreach ($payments as $item) {
                 $item->created_at = timeFormat($item->created_at);
                 $application = Application::find($item->application_id);
                 $data[] = [
                     'id' => $item->id,
                     'amount' => '$'.$item->amount,
                     'paymentStatus' => $item->paymentStatus,
-                    'username' => authUser()->role == 'Client' ? ($application->user->first_name ?? null) : ($application->project->user->first_name ?? null),                    
+                    'username' => authUser()->role == 'Client' ? ($application->user->first_name ?? null) : ($application->project->user->first_name ?? null),
                     'project' => $application->project->title ?? null,
                     'paymentIntentId' => $item->paymentIntentId ?? null,
                     'stripe_transfer_id' => $item->stripe_transfer_id ?? null,
@@ -408,21 +423,17 @@ class ApiController extends Controller
     }
 
     public function walletBalance(){
-        $balance = Payment::whereUserId(authId())->sum('amount');        
+        $balance = Payment::whereUserId(authId())->sum('amount');
         return response()->json(['status' => true, 'message' => 'Success', 'balance' => $balance]);
     }
 
     public function createAccount(Request $request)
     {
-        
-
         $user = User::findOrFail(authId());
 
         Stripe::setApiKey(config('services.stripe.secret'));
 
-        // If the user already has a Stripe account, use it
         if (!$user->stripe_account_id) {
-            // 1. Create Stripe Express account
             $account = Account::create([
                 'type' => 'express',
                 'email' => authUser()->email,
@@ -432,12 +443,10 @@ class ApiController extends Controller
                 ],
             ]);
 
-            // Save the Stripe account ID
             $user->stripe_account_id = $account->id;
             $user->save();
         }
 
-        // 2. Create Stripe onboarding link
         $accountLink = AccountLink::create([
             'account' => $user->stripe_account_id,
             'refresh_url' => 'https://ndpelectronics.com/codehelper/web/user/account',
@@ -450,23 +459,23 @@ class ApiController extends Controller
 
     public function sendContactQuery(Request $request)
     {
-        try{          
+        try{
         $rule['name'] = 'required';
-        $rule['phone'] = 'required';        
-        $rule['email'] = 'required';        
-        $rule['message'] = 'required';                
+        $rule['phone'] = 'required';
+        $rule['email'] = 'required';
+        $rule['message'] = 'required';
         $query = new ContactQuery();
         $query->user_id = authId();
         $query->name = request()->name;
-        $query->email = request()->email;                   
-        $query->phone = request()->phone;                   
-        $query->message = request()->message;                 
-        $query->save();           
-        DB::commit();                
+        $query->email = request()->email;
+        $query->phone = request()->phone;
+        $query->message = request()->message;
+        $query->save();
+        DB::commit();
         return response()->json(['status'=>true, 'message'=>'Query sent successfully.']);
       }catch(\Exception $e){
         DB::rollback();
         return response()->json(['status' => false, 'message' => $e->getMessage()]);
-      }           
+      }
     }
 }
