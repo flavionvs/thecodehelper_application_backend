@@ -47,14 +47,13 @@ class Project extends Model
 
         $data = Project::create($req);
 
-        // Bridge fix: ensure projects.id is always set to my_row_id (so legacy joins work)
-        if (empty($data->id) || (string) $data->id === '0') {
-            DB::table('projects')
-                ->where('my_row_id', $data->my_row_id)
-                ->update(['id' => $data->my_row_id]);
 
-            $data->id = $data->my_row_id;
-        }
+        // ALWAYS bridge: keep legacy joins stable (applications.project_id -> projects.id)
+        DB::table('projects')
+        ->where('my_row_id', $data->my_row_id)
+        ->update(['id' => $data->my_row_id]);
+
+        $data->id = $data->my_row_id;
 
         return ['status' => true];
     }
