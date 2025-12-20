@@ -11,119 +11,180 @@ use DB;
 use Illuminate\Support\Facades\Cache;
 
 class Project extends Model
-{    
+{
+    use HasFactory;
+
+    /**
+     * IMPORTANT (PROD FIX):
+     * Production DB uses MySQL "generated invisible primary key" column: my_row_id (AUTO_INCREMENT).
+     * Eloquent must use that as the primary key, otherwise inserts/updates behave incorrectly.
+     */
+    protected $primaryKey = 'my_row_id';
+    public $incrementing = true;
+    protected $keyType = 'int';
+
     protected $guarded = [];
     protected $appends = ['approved_freelancer_id'];
-    public function insertUpdate($request, $id = null){      
+
+    public function insertUpdate($request, $id = null)
+    {
         $req = request()->except('_token','_method');
-        if(!empty($id)){                                
-            $data = Project::withoutGlobalScope(new ActiveScope)->where('id',$id);
+
+        if (!empty($id)) {
+            // Here $id is the "business id" (projects.id) used everywhere in joins/URLs
+            $data = Project::withoutGlobalScope(new ActiveScope)->where('id', $id);
             $data->update($req);
             $data = $data->first();
-        }else{                  
+        } else {
+            /**
+             * CREATE:
+             * - Force business defaults
+             * - Create row (my_row_id will auto-generate)
+             * - Immediately set projects.id = my_row_id to keep existing relationships working
+             */
+            $req['status'] = 'pending';
+            $req['payment_status'] = 'unpaid';
+            $req['selected_application_id'] = null;
+
             $data = Project::create($req);
-        }                      
+
+            // Ensure the "business id" is always a real unique value (used by joins/applications)
+            if (empty($data->id) || (string)$data->id === '0') {
+                $data->id = $data->my_row_id;
+                $data->save();
+            }
+        }
+
         return ['status' => true];
-    }      
-    public function application(){
+    }
+
+    public function application()
+    {
         return $this->hasMany(Application::class);
     }
-    public function user(){
+
+    public function user()
+    {
         return $this->belongsTo(User::class);
     }
-    public function category(){
+
+    public function category()
+    {
         return $this->belongsTo(Category::class);
     }
 
     public function getApprovedFreelancerIdAttribute()
     {
         $approved_freelancer_id = null;
-        $application =  Application::where('project_id', $this->id)
+
+        // NOTE: applications.project_id is referencing projects.id (business id)
+        $application = Application::where('project_id', $this->id)
             ->where('status', 'Approved')
             ->first();
-        if(!empty($application)){
+
+        if (!empty($application)) {
             $approved_freelancer_id = $application->user_id;
         }
+
         return $approved_freelancer_id;
     }
 
-
-
-    public function datatable(){
+    public function datatable()
+    {
         $data = DB::table('projects')
-                    ->join('users','users.id','projects.user_id')
-                    ->join('categories','categories.id','projects.category_id')
-                    ->leftJoin('applications','applications.project_id','projects.id')
-                    ->groupBy('projects.id')
-                    ->select(
-                        'projects.*',
-                        'categories.name as category',
-                        'users.first_name as client',
-                        DB::raw('COUNT(applications.id) as application')
-                    );
-        if(request()->category){
-            $data->where('category_id',request()->category);
-        }
-        if(request()->client){
-            $data->where('projects.user_id',request()->client);
+            ->join('users','users.id','projects.user_id')
+            ->join('categories','categories.id','projects.category_id')
+            ->leftJoin('applications','applications.project_id','projects.id')
+            ->groupBy('projects.id')
+            ->select(
+                'projects.*',
+                'categories.name as category',
+                'users.first_name as client',
+                DB::raw('COUNT(applications.id) as application')
+            );
+
+        if (request()->category) {
+            $data->where('category_id', request()->category);
         }
 
-       return DataTables::of($data)
-                ->addIndexColumn()                 
-                ->addColumn('created_at','{{dateFormat($created_at)}}')                
-                ->addColumn('category_id','{{$category}}')                
-                ->addColumn('client_id','{{$client}}')                
-                ->addColumn('application', function($data){
-                    return $data->application > 0 ? '<a href="'.url(guardName().'/application', $data->id).'">'.$data->application.'</a>' : $data->application;
-                })                
-                ->addColumn('action', function($data){
-                    $action = [];                      
-                    if(request()->user()->can('edit project')){
-                        $action[] = array('name' => 'edit', 'modal' => 'large', 'url' => route(guardName().".project.edit", $data->id), 'header' => 'Edit project');
-                    }
-                    if(request()->user()->can('delete project')){
-                        $action[] = array('name' => 'delete', 'url' => route(guardName().'.project.destroy', [$data->id]), 'modalId' => 'delete-modal', 'header' => 'Delete');                     
-                    }                    
-                    return view('admin.layout.action', compact('action'));                     
-                })                
-                ->rawColumns(['action', 'application'])
-                ->make(true);
-    }    
-    public function applicationDatatable($project_id){
+        if (request()->client) {
+            $data->where('projects.user_id', request()->client);
+        }
+
+        return DataTables::of($data)
+            ->addIndexColumn()
+            ->addColumn('created_at','{{dateFormat($created_at)}}')
+            ->addColumn('category_id','{{$category}}')
+            ->addColumn('client_id','{{$client}}')
+            ->addColumn('application', function($data){
+                return $data->application > 0
+                    ? '<a href="'.url(guardName().'/application', $data->id).'">'.$data->application.'</a>'
+                    : $data->application;
+            })
+            ->addColumn('action', function($data){
+                $action = [];
+
+                if (request()->user()->can('edit project')) {
+                    $action[] = array(
+                        'name' => 'edit',
+                        'modal' => 'large',
+                        'url' => route(guardName().".project.edit", $data->id),
+                        'header' => 'Edit project'
+                    );
+                }
+
+                if (request()->user()->can('delete project')) {
+                    $action[] = array(
+                        'name' => 'delete',
+                        'url' => route(guardName().'.project.destroy', [$data->id]),
+                        'modalId' => 'delete-modal',
+                        'header' => 'Delete'
+                    );
+                }
+
+                return view('admin.layout.action', compact('action'));
+            })
+            ->rawColumns(['action', 'application'])
+            ->make(true);
+    }
+
+    public function applicationDatatable($project_id)
+    {
         $data = DB::table('applications')
-                    ->join('users','users.id','applications.user_id')                                                            
-                    ->join('projects','projects.id','applications.project_id')                                                            
-                    ->select(
-                        'applications.*',
-                        'users.first_name as username',                        
-                        'projects.title as project',                        
-                    );  
-        if(request()->user){
+            ->join('users','users.id','applications.user_id')
+            ->join('projects','projects.id','applications.project_id')
+            ->select(
+                'applications.*',
+                'users.first_name as username',
+                'projects.title as project',
+            );
+
+        if (request()->user) {
             $data->where('applications.user_id', request()->user);
-        }      
-        if($project_id){
+        }
+
+        if ($project_id) {
             $data->where('applications.project_id', $project_id);
-        }      
-       return DataTables::of($data)
-                ->addIndexColumn()                 
-                ->editColumn('created_at','{{dateFormat($created_at)}}')                
-                ->editColumn('user_id','{{$username}}')                                                        
-                ->editColumn('project_id','{{$project}}')                                                        
-                ->editColumn('attachment', function($data){
-                    $attachments = DB::table('application_attachments')->where('application_id', $data->id)->get();
-                    $links = '';
-                    if($attachments->count() > 0){
-                        foreach($attachments as $item){
-                            $links .='<a href="'.asset($item->attachment).'">View Attachment</a><br>';
-                        }
+        }
+
+        return DataTables::of($data)
+            ->addIndexColumn()
+            ->editColumn('created_at','{{dateFormat($created_at)}}')
+            ->editColumn('user_id','{{$username}}')
+            ->editColumn('project_id','{{$project}}')
+            ->editColumn('attachment', function($data){
+                $attachments = DB::table('application_attachments')->where('application_id', $data->id)->get();
+                $links = '';
+
+                if ($attachments->count() > 0) {
+                    foreach ($attachments as $item) {
+                        $links .= '<a href="'.asset($item->attachment).'">View Attachment</a><br>';
                     }
-                    if($links){
-                        return $links;
-                    }else{
-                        return 'N/A';
-                    }
-                })                                                                            
-                ->rawColumns(['application','links','attachment'])
-                ->make(true);
-    }    
+                }
+
+                return $links ?: 'N/A';
+            })
+            ->rawColumns(['application','links','attachment'])
+            ->make(true);
+    }
 }
