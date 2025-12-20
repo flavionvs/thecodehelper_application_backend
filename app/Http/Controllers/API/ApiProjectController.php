@@ -20,6 +20,14 @@ class ApiProjectController extends Controller
 {
     public function projects(Request $request, $id = null)
     {
+        // If an id is provided via route, it is (in your current setup) the route id (my_row_id).
+        // Convert it to the business id used by joins (projects.id) for safety.
+        $businessId = null;
+        if (!empty($id)) {
+            [$businessId, $err] = $this->businessProjectIdFromRoute($id);
+            if ($err) return $err;
+        }
+
         // Determine relevant project IDs based on role + filter
         if (authUser()->role == 'Client') {
             $project_ids = DB::table('applications')
@@ -45,21 +53,17 @@ class ApiProjectController extends Controller
 
         $projectIds = $project_ids->pluck('applications.project_id')->toArray();
 
-        $project = Project::when($id, function ($q) use ($id) {
-                $q->where('projects.id', $id);
+        $project = Project::when($businessId, function ($q) use ($businessId) {
+                $q->where('projects.id', $businessId);
             })
-            // NOTE: for non "my-projects", we show projects user interacted with (by applications)
-            // If $projectIds is empty, do not filter by whereIn (avoids empty IN () edge cases)
-            ->when(request()->type != 'my-projects' && !$id, function ($q) use ($projectIds) {
+            ->when(request()->type != 'my-projects' && !$businessId, function ($q) use ($projectIds) {
                 if (!empty($projectIds)) {
                     $q->whereIn('projects.id', $projectIds);
                 } else {
-                    // If no applications yet, return empty list for this filter.
-                    // My-projects endpoint covers client's created projects.
                     $q->whereRaw('1 = 0');
                 }
             })
-            ->when(request()->type == 'my-projects' && !$id, function ($q) {
+            ->when(request()->type == 'my-projects' && !$businessId, function ($q) {
                 $q->where('projects.user_id', authId());
             })
             ->when(request()->search, function ($q) {
@@ -84,8 +88,6 @@ class ApiProjectController extends Controller
                 ->select('applications.*', 'projects.status as project_status')
                 ->first();
 
-            // If no application row exists for this project in this view, skip safely
-            // (prevents null access issues and inconsistent data)
             if (!$application && request()->type != 'my-projects') {
                 continue;
             }
@@ -129,23 +131,19 @@ class ApiProjectController extends Controller
             $array['budget'] = $item->budget;
             $array['tags'] = $item->tags;
 
-            // Project status should come from projects table
             $array['status'] = ucfirst($item->status ?? 'pending');
-
-            // Optionally expose current application status
             $array['application_status'] = $current_status->status ?? 'Pending';
 
             $array['remark'] = $application->remark ?? null;
             $array['completion_attachment'] = $att;
 
-            // Safely count related applications if relation exists
             $array['application'] = isset($item->application) ? ($item->application->count() ?? 0) : 0;
 
             $array['completed_on'] = $app_status && $app_status->created_at ? timeFormat($app_status->created_at) : null;
             $array['cancelled_at'] = $cancelled_status && $cancelled_status->created_at ? timeFormat($cancelled_status->created_at) : null;
             $array['completion_request'] = $completion_request && $completion_request->created_at ? timeFormat($completion_request->created_at) : null;
 
-            if (!$id) {
+            if (!$businessId) {
                 $array['category'] = $item->category->name ?? null;
                 $array['created_at'] = dateFormat($item->created_at);
             }
@@ -163,7 +161,11 @@ class ApiProjectController extends Controller
 
     public function edit($id)
     {
-        $project = Project::where('user_id', authId())->find($id);
+        // $id is route id (my_row_id). Convert to business id for consistency.
+        [$businessId, $err] = $this->businessProjectIdFromRoute($id);
+        if ($err) return $err;
+
+        $project = Project::where('user_id', authId())->where('id', $businessId)->first();
 
         if (!$project) {
             return response()->json([
@@ -238,7 +240,6 @@ class ApiProjectController extends Controller
                 'slug' => 'required|unique:projects,slug',
                 'description' => 'required',
                 'category_id' => 'nullable|exists:categories,id',
-                // 'budget' => 'required',
             ]);
 
             if ($validator->fails()) {
@@ -250,10 +251,8 @@ class ApiProjectController extends Controller
             }
 
             $req = request()->except('attachment', 'completed_on', 'completion_request');
-
             $req['user_id'] = authId();
 
-            // FORCE business defaults
             $req['status'] = 'pending';
             $req['payment_status'] = 'unpaid';
             $req['selected_application_id'] = null;
@@ -286,15 +285,18 @@ class ApiProjectController extends Controller
 
     public function update($id)
     {
+        // $id is route id (my_row_id). Convert to business id.
+        [$businessId, $err] = $this->businessProjectIdFromRoute($id);
+        if ($err) return $err;
+
         DB::beginTransaction();
 
         try {
             $validator = Validator::make(request()->all(), [
                 'title' => 'required',
-                'slug' => 'required|unique:projects,slug,' . $id,
+                'slug' => 'required|unique:projects,slug,' . $businessId,
                 'description' => 'required',
                 'category_id' => 'required|exists:categories,id',
-                // 'budget' => 'required',
             ]);
 
             if ($validator->fails()) {
@@ -311,7 +313,7 @@ class ApiProjectController extends Controller
                 $req['attachment'] = fileSave(request()->attachment, 'upload/project');
             }
 
-            $project = Project::where('user_id', authId())->find($id);
+            $project = Project::where('user_id', authId())->where('id', $businessId)->first();
             if (!$project) {
                 return response()->json([
                     'status' => false,
@@ -339,10 +341,14 @@ class ApiProjectController extends Controller
 
     public function delete($id)
     {
+        // $id is route id (my_row_id). Convert to business id.
+        [$businessId, $err] = $this->businessProjectIdFromRoute($id);
+        if ($err) return $err;
+
         DB::beginTransaction();
 
         try {
-            $project = Project::find($id);
+            $project = Project::where('id', $businessId)->first();
             if ($project) {
                 $project->delete();
             }
@@ -362,8 +368,15 @@ class ApiProjectController extends Controller
         }
     }
 
+    /**
+     * IMPORTANT:
+     * Route passes my_row_id, but applications.project_id stores projects.id (business id).
+     */
     public function apply($project_id)
     {
+        [$businessProjectId, $err] = $this->businessProjectIdFromRoute($project_id);
+        if ($err) return $err;
+
         $validator = Validator::make(request()->all(), [
             'hours' => 'required',
             'rate' => 'required',
@@ -377,7 +390,8 @@ class ApiProjectController extends Controller
             ]);
         }
 
-        $project = Project::find($project_id);
+        // Fetch project by business id (joins/relationships rely on projects.id)
+        $project = Project::where('id', $businessProjectId)->first();
         if (!$project) {
             return response()->json([
                 'status' => false,
@@ -385,7 +399,7 @@ class ApiProjectController extends Controller
             ], 404);
         }
 
-        $applied = Application::where('project_id', $project_id)
+        $applied = Application::where('project_id', $businessProjectId)
             ->where('user_id', authId())
             ->first();
 
@@ -397,7 +411,7 @@ class ApiProjectController extends Controller
             return response()->json(['status' => false, 'message' => 'Only freelancer can apply!']);
         }
 
-        if ($project->user_id == authId()) {
+        if ((int)$project->user_id === (int)authId()) {
             return response()->json(['status' => false, 'message' => 'You can not apply your own project!']);
         }
 
@@ -411,7 +425,7 @@ class ApiProjectController extends Controller
 
         $application = Application::create([
             'user_id' => authId(),
-            'project_id' => $project_id,
+            'project_id' => $businessProjectId,
             'hours' => request()->hours,
             'rate' => request()->rate,
             'description' => request()->description,
@@ -458,10 +472,13 @@ class ApiProjectController extends Controller
 
     public function application($project_id)
     {
+        [$businessProjectId, $err] = $this->businessProjectIdFromRoute($project_id);
+        if ($err) return $err;
+
         $applications = Application::whereHas('project', function ($q) {
                 $q->where('user_id', authId());
             })
-            ->where('project_id', $project_id)
+            ->where('project_id', $businessProjectId)
             ->select('applications.*')
             ->orderByDesc('id')
             ->paginate(10);
@@ -504,9 +521,12 @@ class ApiProjectController extends Controller
 
     public function applied($project_id)
     {
-        $applied = Application::where('project_id', $project_id)
+        [$businessProjectId, $err] = $this->businessProjectIdFromRoute($project_id);
+        if ($err) return $err;
+
+        $applied = Application::where('project_id', $businessProjectId)
             ->where('user_id', authId())
-            ->first();
+            ->exists();
 
         return response()->json([
             'status' => true,
@@ -575,6 +595,9 @@ class ApiProjectController extends Controller
 
     public function completed($id)
     {
+        [$businessProjectId, $err] = $this->businessProjectIdFromRoute($id);
+        if ($err) return $err;
+
         DB::beginTransaction();
 
         try {
@@ -611,7 +634,7 @@ class ApiProjectController extends Controller
                 ]);
             }
 
-            $application = Application::where('project_id', $id)
+            $application = Application::where('project_id', $businessProjectId)
                 ->where('user_id', authId())
                 ->where('status', 'Approved')
                 ->first();
@@ -670,11 +693,14 @@ class ApiProjectController extends Controller
 
     public function acceptCompleted($id)
     {
+        [$businessProjectId, $err] = $this->businessProjectIdFromRoute($id);
+        if ($err) return $err;
+
         DB::beginTransaction();
 
         try {
             $application = Application::join('projects', 'projects.id', 'applications.project_id')
-                ->where('project_id', $id)
+                ->where('applications.project_id', $businessProjectId)
                 ->where('projects.user_id', authId())
                 ->where('applications.status', 'Completion Requested')
                 ->select('applications.*')
@@ -813,5 +839,23 @@ class ApiProjectController extends Controller
                 'message' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Converts route project id (my_row_id) -> business id (projects.id)
+     * because applications.project_id references projects.id.
+     */
+    private function businessProjectIdFromRoute($project_id)
+    {
+        $project = Project::where('my_row_id', $project_id)->first();
+
+        if (!$project) {
+            return [null, response()->json([
+                'status' => false,
+                'message' => 'Project not found',
+            ], 404)];
+        }
+
+        return [$project->id, null];
     }
 }
