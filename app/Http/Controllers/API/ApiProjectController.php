@@ -126,6 +126,7 @@ class ApiProjectController extends Controller
 
             $array = [];
             $array['id'] = $item->id;
+            $array['applied'] = Application::where('project_id', $item->id)->where('user_id', authId())->exists();
             $array['category_id'] = $item->category_id;
             $array['approved_freelancer_id'] = $item->approved_freelancer_id ?? null;
             $array['title'] = $item->title;
