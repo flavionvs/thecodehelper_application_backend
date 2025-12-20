@@ -236,23 +236,7 @@ class ApiProjectController extends Controller
 
             $project = Project::create($req);
 
-            // ✅ PROD FIX: Ensure projects.id is set (legacy joins use projects.id)
-            if (empty($project->id) || (string) $project->id === '0') {
-                $myRowId = $project->my_row_id ?? null;
-
-                if (!$myRowId) {
-                    $myRowId = DB::table('projects')
-                        ->where('slug', $project->slug)
-                        ->orderByDesc('created_at')
-                        ->value('my_row_id');
-                }
-
-                if ($myRowId) {
-                    $project->id = $myRowId;
-                    $project->save();
-                }
-            }
-
+            
             DB::commit();
 
             return response()->json([
