@@ -13,13 +13,14 @@ use App\Models\Project;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class ApiProjectController extends Controller
 {
     public function projects(Request $request, $id = null)
     {
+        // Determine relevant project IDs based on role + filter
         if (authUser()->role == 'Client') {
             $project_ids = DB::table('applications')
                 ->join('projects', 'projects.id', '=', 'applications.project_id')
@@ -35,9 +36,7 @@ class ApiProjectController extends Controller
                     ->orWhere('applications.status', 'Completion Requested');
             });
         } elseif (request()->type == 'cancelled') {
-            $project_ids->where(function ($q) {
-                $q->where('applications.status', 'Cancelled');
-            });
+            $project_ids->where('applications.status', 'Cancelled');
         } elseif (request()->type == 'completed') {
             $project_ids->where('applications.status', 'Completed');
         } elseif (request()->type == 'applied') {
@@ -49,8 +48,16 @@ class ApiProjectController extends Controller
         $project = Project::when($id, function ($q) use ($id) {
                 $q->where('projects.id', $id);
             })
+            // NOTE: for non "my-projects", we show projects user interacted with (by applications)
+            // If $projectIds is empty, do not filter by whereIn (avoids empty IN () edge cases)
             ->when(request()->type != 'my-projects' && !$id, function ($q) use ($projectIds) {
-                $q->whereIn('projects.id', $projectIds);
+                if (!empty($projectIds)) {
+                    $q->whereIn('projects.id', $projectIds);
+                } else {
+                    // If no applications yet, return empty list for this filter.
+                    // My-projects endpoint covers client's created projects.
+                    $q->whereRaw('1 = 0');
+                }
             })
             ->when(request()->type == 'my-projects' && !$id, function ($q) {
                 $q->where('projects.user_id', authId());
@@ -73,9 +80,15 @@ class ApiProjectController extends Controller
                 ->when(authUser()->role == 'Client', function ($q) {
                     $q->where('projects.user_id', authId());
                 })
-                ->where('project_id', $item->id)
+                ->where('applications.project_id', $item->id)
                 ->select('applications.*', 'projects.status as project_status')
                 ->first();
+
+            // If no application row exists for this project in this view, skip safely
+            // (prevents null access issues and inconsistent data)
+            if (!$application && request()->type != 'my-projects') {
+                continue;
+            }
 
             $app_status = DB::table('application_statuses')
                 ->where('application_id', $application->id ?? null)
@@ -106,6 +119,7 @@ class ApiProjectController extends Controller
                 $att[] = img($ca->attachment);
             }
 
+            $array = [];
             $array['id'] = $item->id;
             $array['category_id'] = $item->category_id;
             $array['approved_freelancer_id'] = $item->approved_freelancer_id ?? null;
@@ -115,16 +129,18 @@ class ApiProjectController extends Controller
             $array['budget'] = $item->budget;
             $array['tags'] = $item->tags;
 
-            // ✅ FIX: Project status should come from projects table (not application status)
+            // Project status should come from projects table
             $array['status'] = ucfirst($item->status ?? 'pending');
 
-            // ✅ Optional: expose application status separately (useful for UI)
+            // Optionally expose current application status
             $array['application_status'] = $current_status->status ?? 'Pending';
 
             $array['remark'] = $application->remark ?? null;
             $array['completion_attachment'] = $att;
 
-            $array['application'] = $item->application->count() ?? 0;
+            // Safely count related applications if relation exists
+            $array['application'] = isset($item->application) ? ($item->application->count() ?? 0) : 0;
+
             $array['completed_on'] = $app_status && $app_status->created_at ? timeFormat($app_status->created_at) : null;
             $array['cancelled_at'] = $cancelled_status && $cancelled_status->created_at ? timeFormat($cancelled_status->created_at) : null;
             $array['completion_request'] = $completion_request && $completion_request->created_at ? timeFormat($completion_request->created_at) : null;
@@ -148,6 +164,16 @@ class ApiProjectController extends Controller
     public function edit($id)
     {
         $project = Project::where('user_id', authId())->find($id);
+
+        if (!$project) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Project not found',
+                'data' => null,
+            ], 404);
+        }
+
+        $data = [];
         $data['id'] = $project->id;
         $data['category_id'] = $project->category_id;
         $data['title'] = $project->title;
@@ -170,7 +196,7 @@ class ApiProjectController extends Controller
             ->join('applications', 'applications.project_id', 'projects.id')
             ->where('applications.status', 'Approved')
             ->groupBy('projects.id')
-            ->orderByDESC('applications.created_at')
+            ->orderByDesc('applications.created_at')
             ->select('projects.*', DB::raw('(SELECT COUNT(id) FROM applications WHERE project_id = projects.id) as application_count'))
             ->paginate(10);
 
@@ -179,6 +205,7 @@ class ApiProjectController extends Controller
 
         if ($project) {
             foreach ($project as $item) {
+                $array = [];
                 $array['id'] = $item->id;
                 $array['category_id'] = $item->category_id;
                 $array['title'] = $item->title;
@@ -204,6 +231,7 @@ class ApiProjectController extends Controller
     public function create()
     {
         DB::beginTransaction();
+
         try {
             $validator = Validator::make(request()->all(), [
                 'title' => 'required',
@@ -225,7 +253,7 @@ class ApiProjectController extends Controller
 
             $req['user_id'] = authId();
 
-            // ✅ FORCE business defaults
+            // FORCE business defaults
             $req['status'] = 'pending';
             $req['payment_status'] = 'unpaid';
             $req['selected_application_id'] = null;
@@ -236,7 +264,6 @@ class ApiProjectController extends Controller
 
             $project = Project::create($req);
 
-            
             DB::commit();
 
             return response()->json([
@@ -250,13 +277,17 @@ class ApiProjectController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => showError($e)]);
+            return response()->json([
+                'status' => false,
+                'message' => showError($e),
+            ]);
         }
     }
 
     public function update($id)
     {
         DB::beginTransaction();
+
         try {
             $validator = Validator::make(request()->all(), [
                 'title' => 'required',
@@ -280,29 +311,54 @@ class ApiProjectController extends Controller
                 $req['attachment'] = fileSave(request()->attachment, 'upload/project');
             }
 
-            Project::where('user_id', authId())->find($id)->update($req);
+            $project = Project::where('user_id', authId())->find($id);
+            if (!$project) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Project not found',
+                ], 404);
+            }
+
+            $project->update($req);
+
             DB::commit();
 
-            return response()->json(['status' => true, 'message' => 'Projects updated successfully!', 'data' => []]);
+            return response()->json([
+                'status' => true,
+                'message' => 'Projects updated successfully!',
+                'data' => [],
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => showError($e)]);
+            return response()->json([
+                'status' => false,
+                'message' => showError($e),
+            ]);
         }
     }
 
     public function delete($id)
     {
         DB::beginTransaction();
+
         try {
             $project = Project::find($id);
             if ($project) {
                 $project->delete();
             }
+
             DB::commit();
-            return response()->json(['status' => true, 'message' => 'Projects deleted successfully!']);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Projects deleted successfully!',
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => showError($e)]);
+            return response()->json([
+                'status' => false,
+                'message' => showError($e),
+            ]);
         }
     }
 
@@ -314,7 +370,19 @@ class ApiProjectController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['status' => false, 'message' => 'Validation error', 'data' => validationError($validator)]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Validation error',
+                'data' => validationError($validator),
+            ]);
+        }
+
+        $project = Project::find($project_id);
+        if (!$project) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Project not found',
+            ], 404);
         }
 
         $applied = Application::where('project_id', $project_id)
@@ -325,8 +393,6 @@ class ApiProjectController extends Controller
             return response()->json(['status' => false, 'message' => 'Already applied!']);
         }
 
-        $project = Project::find($project_id);
-
         if (authUser()->role == 'Client') {
             return response()->json(['status' => false, 'message' => 'Only freelancer can apply!']);
         }
@@ -336,11 +402,11 @@ class ApiProjectController extends Controller
         }
 
         $amount = request()->hours * request()->rate;
-        $admin_commission = 25; // in percentage
+        $admin_commission = 25; // %
         $admin_amount = $admin_commission * $amount / 100;
-        $stripe_commission = 2.6; // in percentage
+        $stripe_commission = 2.6; // %
         $stripe_amount = $stripe_commission * $amount / 100;
-        $stripe_fee = .3; // in currency
+        $stripe_fee = 0.3; // currency
         $total_amount = $amount + $admin_amount + $stripe_amount + $stripe_fee;
 
         $application = Application::create([
@@ -357,7 +423,9 @@ class ApiProjectController extends Controller
             'stripe_fee' => $stripe_fee,
             'total_amount' => $total_amount,
             'project_data' => $project,
-            'user_data' => User::where('id', authId())->select('users.first_name', 'users.email', 'users.first_name', 'users.phone')->first(),
+            'user_data' => User::where('id', authId())
+                ->select('users.first_name', 'users.email', 'users.first_name', 'users.phone')
+                ->first(),
             'status' => 'Pending',
         ]);
 
@@ -382,7 +450,10 @@ class ApiProjectController extends Controller
             'message' => 'You have a new project application',
         ]);
 
-        return response()->json(['status' => true, 'message' => 'Application submitted successfully!']);
+        return response()->json([
+            'status' => true,
+            'message' => 'Application submitted successfully!',
+        ]);
     }
 
     public function application($project_id)
@@ -392,7 +463,7 @@ class ApiProjectController extends Controller
             })
             ->where('project_id', $project_id)
             ->select('applications.*')
-            ->orderByDESC('id')
+            ->orderByDesc('id')
             ->paginate(10);
 
         $data = [];
@@ -400,6 +471,7 @@ class ApiProjectController extends Controller
 
         if ($applications) {
             foreach ($applications as $item) {
+                $array = [];
                 $array['id'] = $item->id;
                 $array['user_id'] = $item->user_id;
                 $array['username'] = $item->user->first_name;
@@ -436,18 +508,30 @@ class ApiProjectController extends Controller
             ->where('user_id', authId())
             ->first();
 
-        return response()->json(['status' => true, 'message' => 'Success!', 'applied' => $applied ? true : false]);
+        return response()->json([
+            'status' => true,
+            'message' => 'Success!',
+            'applied' => $applied ? true : false,
+        ]);
     }
 
     public function updateApplicationStatus()
     {
         DB::beginTransaction();
+
         try {
             $applied = Application::whereHas('project', function ($q) {
                     $q->where('user_id', authId());
                 })
                 ->where('id', request()->applicationId)
                 ->first();
+
+            if (!$applied) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Application not found',
+                ], 404);
+            }
 
             $applied->status = 'Approved';
             $applied->save();
@@ -461,42 +545,56 @@ class ApiProjectController extends Controller
                 'paymentStatus' => request()->paymentStatus,
             ]);
 
-            if (isset($applied->user_id)) {
-                Notification::create([
-                    'user_id' => $applied->user_id,
-                    'title' => 'Application approved',
-                    'message' => 'Your application has been approved',
-                ]);
+            Notification::create([
+                'user_id' => $applied->user_id,
+                'title' => 'Application approved',
+                'message' => 'Your application has been approved',
+            ]);
 
-                Notification::create([
-                    'user_id' => $applied->project->user_id,
-                    'title' => 'You have a new project application.',
-                    'message' => 'You have a new project application',
-                ]);
-            }
+            Notification::create([
+                'user_id' => $applied->project->user_id,
+                'title' => 'You have a new project application.',
+                'message' => 'You have a new project application',
+            ]);
 
             DB::commit();
-            return response()->json(['status' => true, 'message' => 'Success!', 'applied' => $applied ? true : false]);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Success!',
+                'applied' => true,
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => $e->getMessage()]);
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
     public function completed($id)
     {
         DB::beginTransaction();
+
         try {
             $validator = Validator::make(request()->all(), [
                 'remark' => 'required',
             ]);
 
             if ($validator->fails()) {
-                return response()->json(['status' => false, 'message' => 'Validation error', 'data' => validationError($validator)]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Validation error',
+                    'data' => validationError($validator),
+                ]);
             }
 
             if (!authUser()->stripe_account_id) {
-                return response()->json(['status' => false, 'message' => 'Please connect your account with stripe first.']);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Please connect your account with stripe first.',
+                ]);
             }
 
             \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
@@ -507,7 +605,10 @@ class ApiProjectController extends Controller
                 (!isset($account->charges_enabled) || !$account->charges_enabled) ||
                 (!isset($account->payouts_enabled) || !$account->payouts_enabled)
             ) {
-                return response()->json(['status' => false, 'message' => 'Your Stripe account is not fully verified.']);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Your Stripe account is not fully verified.',
+                ]);
             }
 
             $application = Application::where('project_id', $id)
@@ -516,7 +617,10 @@ class ApiProjectController extends Controller
                 ->first();
 
             if (!$application) {
-                return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid request sent.',
+                ]);
             }
 
             $application->status = 'Completion Requested';
@@ -550,16 +654,24 @@ class ApiProjectController extends Controller
             ]);
 
             DB::commit();
-            return response()->json(['status' => true, 'message' => 'Project completion request sent successfully.']);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Project completion request sent successfully.',
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => $e->getMessage()]);
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
     public function acceptCompleted($id)
     {
         DB::beginTransaction();
+
         try {
             $application = Application::join('projects', 'projects.id', 'applications.project_id')
                 ->where('project_id', $id)
@@ -569,7 +681,10 @@ class ApiProjectController extends Controller
                 ->first();
 
             if (!$application) {
-                return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid request sent.',
+                ]);
             }
 
             $application->status = 'Completed';
@@ -603,36 +718,47 @@ class ApiProjectController extends Controller
                 'paymentStatus' => 'succeeded',
             ]);
 
-            Notification::create([ // Freelancer
+            Notification::create([
                 'user_id' => $application->user_id,
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
             ]);
 
-            Notification::create([ // Client
+            Notification::create([
                 'user_id' => $application->project->user_id,
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
             ]);
 
             DB::commit();
-            return response()->json(['status' => true, 'message' => 'Project accepted successfully.']);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Project accepted successfully.',
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => $e->getMessage()]);
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
     public function cancel($application_id)
     {
         DB::beginTransaction();
+
         try {
             $application = Application::where('id', $application_id)
                 ->select('applications.*')
                 ->first();
 
             if (!$application) {
-                return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid request sent.',
+                ]);
             }
 
             $application->status = 'Cancelled';
@@ -648,7 +774,10 @@ class ApiProjectController extends Controller
 
             $transfer = transfer($freelancer_account->stripe_account_id, $application->total_amount);
             if (!$transfer['status']) {
-                return response()->json(['status' => false, 'message' => $transfer['message']]);
+                return response()->json([
+                    'status' => false,
+                    'message' => $transfer['message'],
+                ]);
             }
 
             Payment::create([
@@ -659,23 +788,30 @@ class ApiProjectController extends Controller
                 'stripe_transfer_id' => $transfer['stripe_transfer_id'],
             ]);
 
-            Notification::create([ // freelancer
+            Notification::create([
                 'user_id' => $application->user_id,
                 'title' => 'Project completion cancelled',
                 'message' => 'Project completion has been cancelled.',
             ]);
 
-            Notification::create([ // Client
+            Notification::create([
                 'user_id' => $application->project->user_id,
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
             ]);
 
             DB::commit();
-            return response()->json(['status' => true, 'message' => 'Project cancelled successfully.']);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Project cancelled successfully.',
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => false, 'message' => $e->getMessage()]);
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 }
