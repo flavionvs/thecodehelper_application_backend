@@ -18,18 +18,54 @@ use Illuminate\Support\Facades\Validator;
 
 class ApiProjectController extends Controller
 {
+    /**
+     * ✅ Resolver that works with BOTH schemas:
+     * - routes might send projects.id OR projects.my_row_id
+     * - applications.project_id might store projects.id OR projects.my_row_id
+     *
+     * Returns: [$businessId (projects.id), $routeId (projects.my_row_id), $projectModel, $errResponse]
+     */
+    private function resolveProject($project_id)
+    {
+        $project = Project::where('id', $project_id)
+            ->orWhere('my_row_id', $project_id)
+            ->first();
+
+        if (!$project) {
+            return [null, null, null, response()->json([
+                'status' => false,
+                'message' => 'Project not found',
+            ], 404)];
+        }
+
+        return [(int) $project->id, (int) $project->my_row_id, $project, null];
+    }
+
+    private function projectIdCandidates($businessId, $routeId)
+    {
+        $ids = [];
+        if (!empty($businessId)) $ids[] = (int) $businessId;
+        if (!empty($routeId)) $ids[] = (int) $routeId;
+        return array_values(array_unique($ids));
+    }
+
     public function projects(Request $request, $id = null)
     {
-        // $id can be either projects.id OR projects.my_row_id, so resolve safely
         $businessId = null;
+        $routeId = null;
+
         if (!empty($id)) {
-            [$businessId, $err] = $this->resolveBusinessProjectId($id);
+            [$businessId, $routeId, $proj, $err] = $this->resolveProject($id);
             if ($err) return $err;
         }
 
         if (authUser()->role == 'Client') {
+            // ✅ FIX: join must work whether applications.project_id matches projects.id OR projects.my_row_id
             $project_ids = DB::table('applications')
-                ->join('projects', 'projects.id', '=', 'applications.project_id')
+                ->join('projects', function ($join) {
+                    $join->on('projects.id', '=', 'applications.project_id')
+                        ->orOn('projects.my_row_id', '=', 'applications.project_id');
+                })
                 ->where('projects.user_id', authId());
         } else {
             $project_ids = DB::table('applications')
@@ -49,25 +85,31 @@ class ApiProjectController extends Controller
             $project_ids->where('applications.status', 'Pending');
         }
 
-        $projectIds = $project_ids->pluck('applications.project_id')->toArray();
+        $appProjectIds = $project_ids->pluck('applications.project_id')->toArray();
 
-        $project = Project::when($businessId, function ($q) use ($businessId) {
-                $q->where('projects.id', $businessId);
+        $project = Project::when($businessId || $routeId, function ($q) use ($businessId, $routeId) {
+                $q->where(function ($qq) use ($businessId, $routeId) {
+                    if ($businessId) $qq->orWhere('projects.id', $businessId);
+                    if ($routeId) $qq->orWhere('projects.my_row_id', $routeId);
+                });
             })
-            ->when(request()->type != 'my-projects' && !$businessId, function ($q) use ($projectIds) {
-                if (!empty($projectIds)) {
-                    $q->whereIn('projects.id', $projectIds);
+            ->when(request()->type != 'my-projects' && !$businessId && !$routeId, function ($q) use ($appProjectIds) {
+                if (!empty($appProjectIds)) {
+                    $q->where(function ($qq) use ($appProjectIds) {
+                        $qq->whereIn('projects.id', $appProjectIds)
+                            ->orWhereIn('projects.my_row_id', $appProjectIds);
+                    });
                 } else {
                     $q->whereRaw('1 = 0');
                 }
             })
-            ->when(request()->type == 'my-projects' && !$businessId, function ($q) {
+            ->when(request()->type == 'my-projects' && !$businessId && !$routeId, function ($q) {
                 $q->where('projects.user_id', authId());
             })
             ->when(request()->search, function ($q) {
                 $q->where('projects.title', 'like', '%' . request()->search . '%');
             })
-            ->orderByDesc('projects.id')
+            ->orderByDesc('projects.my_row_id')
             ->paginate(10);
 
         $data = [];
@@ -75,15 +117,20 @@ class ApiProjectController extends Controller
 
         foreach ($project as $item) {
 
+            $candidateProjectIds = $this->projectIdCandidates($item->id, $item->my_row_id);
+
             // ✅ IMPORTANT: Fetch application only for the current viewer/user
             $applicationQuery = DB::table('applications')
-                ->where('applications.project_id', $item->id);
+                ->whereIn('applications.project_id', $candidateProjectIds);
 
             if (authUser()->role == 'Freelancer') {
                 $applicationQuery->where('applications.user_id', authId());
             } else {
                 // Client
-                $applicationQuery->join('projects', 'projects.id', '=', 'applications.project_id')
+                $applicationQuery->join('projects', function ($join) {
+                        $join->on('projects.id', '=', 'applications.project_id')
+                            ->orOn('projects.my_row_id', '=', 'applications.project_id');
+                    })
                     ->where('projects.user_id', authId())
                     ->select('applications.*', 'projects.status as project_status');
             }
@@ -111,7 +158,7 @@ class ApiProjectController extends Controller
                 ->first();
 
             $current_status = DB::table('applications')
-                ->where('project_id', $item->id)
+                ->whereIn('project_id', $candidateProjectIds)
                 ->where('status', '!=', 'Pending')
                 ->first();
 
@@ -127,7 +174,7 @@ class ApiProjectController extends Controller
             $array = [];
             $array['id'] = $item->id;
             $array['route_id'] = $item->my_row_id;
-            $array['applied'] = Application::where('project_id', $item->id)->where('user_id', authId())->exists();
+            $array['applied'] = Application::whereIn('project_id', $candidateProjectIds)->where('user_id', authId())->exists();
             $array['category_id'] = $item->category_id;
             $array['approved_freelancer_id'] = $item->approved_freelancer_id ?? null;
             $array['title'] = $item->title;
@@ -148,7 +195,7 @@ class ApiProjectController extends Controller
             $array['cancelled_at'] = $cancelled_status && $cancelled_status->created_at ? timeFormat($cancelled_status->created_at) : null;
             $array['completion_request'] = $completion_request && $completion_request->created_at ? timeFormat($completion_request->created_at) : null;
 
-            if (!$businessId) {
+            if (!$businessId && !$routeId) {
                 $array['category'] = $item->category->name ?? null;
                 $array['created_at'] = dateFormat($item->created_at);
             }
@@ -166,10 +213,14 @@ class ApiProjectController extends Controller
 
     public function edit($id)
     {
-        [$businessId, $err] = $this->resolveBusinessProjectId($id);
+        [$businessId, $routeId, $project, $err] = $this->resolveProject($id);
         if ($err) return $err;
 
-        $project = Project::where('user_id', authId())->where('id', $businessId)->first();
+        $project = Project::where('user_id', authId())
+            ->where(function ($q) use ($businessId, $routeId) {
+                $q->where('id', $businessId)->orWhere('my_row_id', $routeId);
+            })
+            ->first();
 
         if (!$project) {
             return response()->json([
@@ -197,12 +248,16 @@ class ApiProjectController extends Controller
 
     public function ongoingProjects()
     {
+        // ✅ FIX join to support both possible mappings
         $project = Project::where('projects.user_id', authId())
-            ->join('applications', 'applications.project_id', 'projects.id')
+            ->join('applications', function ($join) {
+                $join->on('applications.project_id', '=', 'projects.id')
+                    ->orOn('applications.project_id', '=', 'projects.my_row_id');
+            })
             ->where('applications.status', 'Approved')
             ->groupBy('projects.id')
-            ->orderByDESC('applications.created_at')
-            ->select('projects.*', DB::raw('(SELECT COUNT(id) FROM applications WHERE project_id = projects.id) as application_count'))
+            ->orderByDesc('applications.created_at')
+            ->select('projects.*', DB::raw('(SELECT COUNT(id) FROM applications WHERE project_id = projects.id OR project_id = projects.my_row_id) as application_count'))
             ->paginate(10);
 
         $data = [];
@@ -266,13 +321,11 @@ class ApiProjectController extends Controller
             $project = Project::create($req);
 
             /**
-             * ✅ CRITICAL BRIDGE FIX
-             * If production DB uses my_row_id as the real auto-increment,
-             * ensure projects.id is set to that value so applications.project_id works.
+             * ✅ BRIDGE FIX (kept from your version):
+             * If id is missing/0 but we have my_row_id, set id to my_row_id.
              */
             $routeId = $project->my_row_id ?? null;
 
-            // If id is missing/0 but we have my_row_id, bridge it
             if ($routeId && (empty($project->id) || (int)$project->id === 0)) {
                 DB::table('projects')
                     ->where('my_row_id', $routeId)
@@ -287,8 +340,8 @@ class ApiProjectController extends Controller
                 'status' => true,
                 'message' => 'Projects created successfully!',
                 'data' => [
-                    'id' => $project->id,                       // business id (must be non-zero)
-                    'route_id' => $project->my_row_id ?? $project->id, // route id for frontend
+                    'id' => $project->id,
+                    'route_id' => $project->my_row_id ?? $project->id,
                     'status' => $project->status,
                     'payment_status' => $project->payment_status,
                 ],
@@ -303,10 +356,9 @@ class ApiProjectController extends Controller
         }
     }
 
-
     public function update($id)
     {
-        [$businessId, $err] = $this->resolveBusinessProjectId($id);
+        [$businessId, $routeId, $proj, $err] = $this->resolveProject($id);
         if ($err) return $err;
 
         DB::beginTransaction();
@@ -333,7 +385,12 @@ class ApiProjectController extends Controller
                 $req['attachment'] = fileSave(request()->attachment, 'upload/project');
             }
 
-            $project = Project::where('user_id', authId())->where('id', $businessId)->first();
+            $project = Project::where('user_id', authId())
+                ->where(function ($q) use ($businessId, $routeId) {
+                    $q->where('id', $businessId)->orWhere('my_row_id', $routeId);
+                })
+                ->first();
+
             if (!$project) {
                 return response()->json([
                     'status' => false,
@@ -361,13 +418,16 @@ class ApiProjectController extends Controller
 
     public function delete($id)
     {
-        [$businessId, $err] = $this->resolveBusinessProjectId($id);
+        [$businessId, $routeId, $proj, $err] = $this->resolveProject($id);
         if ($err) return $err;
 
         DB::beginTransaction();
 
         try {
-            $project = Project::where('id', $businessId)->first();
+            $project = Project::where(function ($q) use ($businessId, $routeId) {
+                $q->where('id', $businessId)->orWhere('my_row_id', $routeId);
+            })->first();
+
             if ($project) {
                 $project->delete();
             }
@@ -389,7 +449,7 @@ class ApiProjectController extends Controller
 
     public function apply($project_id)
     {
-        [$businessProjectId, $err] = $this->resolveBusinessProjectId($project_id);
+        [$businessProjectId, $routeProjectId, $project, $err] = $this->resolveProject($project_id);
         if ($err) return $err;
 
         $validator = Validator::make(request()->all(), [
@@ -405,15 +465,9 @@ class ApiProjectController extends Controller
             ]);
         }
 
-        $project = Project::where('id', $businessProjectId)->first();
-        if (!$project) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Project not found',
-            ], 404);
-        }
+        $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
 
-        $alreadyApplied = Application::where('project_id', $businessProjectId)
+        $alreadyApplied = Application::whereIn('project_id', $candidateProjectIds)
             ->where('user_id', authId())
             ->exists();
 
@@ -440,9 +494,14 @@ class ApiProjectController extends Controller
             $stripe_fee = 0.3;
             $total_amount = $amount + $admin_amount + $stripe_amount + $stripe_fee;
 
+            // ✅ IMPORTANT:
+            // Store project_id consistently. To be compatible with your existing DB,
+            // prefer my_row_id if it exists, else use id.
+            $storeProjectId = $routeProjectId ?: $businessProjectId;
+
             $application = Application::create([
                 'user_id' => authId(),
-                'project_id' => $businessProjectId,
+                'project_id' => $storeProjectId,
                 'hours' => request()->hours,
                 'rate' => request()->rate,
                 'description' => request()->description,
@@ -469,7 +528,7 @@ class ApiProjectController extends Controller
                 }
             }
 
-            // ✅ Notifications should NEVER crash apply()
+            // ✅ Notifications must never break apply
             try {
                 Notification::create([
                     'user_id' => authId(),
@@ -477,7 +536,6 @@ class ApiProjectController extends Controller
                     'message' => 'You have a new project application',
                 ]);
 
-                // ✅ FIX: Use $project->user_id (guaranteed), NOT $application->project->user_id (can be null)
                 Notification::create([
                     'user_id' => $project->user_id,
                     'title' => 'You have a new project application.',
@@ -485,7 +543,7 @@ class ApiProjectController extends Controller
                 ]);
             } catch (\Throwable $e) {
                 \Log::error('Apply notification failed: ' . $e->getMessage(), [
-                    'project_id' => $businessProjectId,
+                    'project_id' => $storeProjectId,
                     'freelancer_id' => authId(),
                 ]);
             }
@@ -500,7 +558,7 @@ class ApiProjectController extends Controller
             DB::rollBack();
 
             \Log::error('Apply failed: ' . $e->getMessage(), [
-                'project_id' => $businessProjectId,
+                'project_id' => $project_id,
                 'freelancer_id' => authId(),
             ]);
 
@@ -511,18 +569,22 @@ class ApiProjectController extends Controller
         }
     }
 
-
     public function application($project_id)
     {
-        [$businessProjectId, $err] = $this->resolveBusinessProjectId($project_id);
+        [$businessProjectId, $routeProjectId, $project, $err] = $this->resolveProject($project_id);
         if ($err) return $err;
 
-        $applications = Application::whereHas('project', function ($q) {
-                $q->where('user_id', authId());
+        $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
+
+        // ✅ FIX: use join that supports both id mappings, don't rely on whereHas('project')
+        $applications = Application::join('projects', function ($join) {
+                $join->on('projects.id', '=', 'applications.project_id')
+                    ->orOn('projects.my_row_id', '=', 'applications.project_id');
             })
-            ->where('project_id', $businessProjectId)
+            ->where('projects.user_id', authId())
+            ->whereIn('applications.project_id', $candidateProjectIds)
             ->select('applications.*')
-            ->orderByDesc('id')
+            ->orderByDesc('applications.id')
             ->paginate(10);
 
         $data = [];
@@ -532,7 +594,7 @@ class ApiProjectController extends Controller
             $data[] = [
                 'id' => $item->id,
                 'user_id' => $item->user_id,
-                'username' => $item->user->first_name,
+                'username' => $item->user->first_name ?? null,
                 'status' => $item->status,
                 'description' => $item->description,
                 'hours' => $item->hours,
@@ -544,9 +606,9 @@ class ApiProjectController extends Controller
                 'stripe_amount' => $item->stripe_amount,
                 'stripe_fee' => $item->stripe_fee,
                 'total_amount' => $item->total_amount,
-                'attachments' => $item->attachments->map(function ($attachment) {
+                'attachments' => $item->attachments ? $item->attachments->map(function ($attachment) {
                     return img($attachment->attachment);
-                })->toArray(),
+                })->toArray() : [],
                 'date_and_time' => timeFormat($item->created_at),
             ];
         }
@@ -561,10 +623,12 @@ class ApiProjectController extends Controller
 
     public function applied($project_id)
     {
-        [$businessProjectId, $err] = $this->resolveBusinessProjectId($project_id);
+        [$businessProjectId, $routeProjectId, $project, $err] = $this->resolveProject($project_id);
         if ($err) return $err;
 
-        $exists = Application::where('project_id', $businessProjectId)
+        $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
+
+        $exists = Application::whereIn('project_id', $candidateProjectIds)
             ->where('user_id', authId())
             ->exists();
 
@@ -580,10 +644,14 @@ class ApiProjectController extends Controller
         DB::beginTransaction();
 
         try {
-            $applied = Application::whereHas('project', function ($q) {
-                    $q->where('user_id', authId());
+            // ✅ FIX: join projects in a way that supports both id mappings
+            $applied = Application::join('projects', function ($join) {
+                    $join->on('projects.id', '=', 'applications.project_id')
+                        ->orOn('projects.my_row_id', '=', 'applications.project_id');
                 })
-                ->where('id', request()->applicationId)
+                ->where('projects.user_id', authId())
+                ->where('applications.id', request()->applicationId)
+                ->select('applications.*')
                 ->first();
 
             if (!$applied) {
@@ -611,11 +679,18 @@ class ApiProjectController extends Controller
                 'message' => 'Your application has been approved',
             ]);
 
-            Notification::create([
-                'user_id' => $applied->project->user_id,
-                'title' => 'You have a new project application.',
-                'message' => 'You have a new project application',
-            ]);
+            // ✅ Safer customer notification: resolve project owner via join
+            $proj = Project::where('id', $applied->project_id)
+                ->orWhere('my_row_id', $applied->project_id)
+                ->first();
+
+            if ($proj) {
+                Notification::create([
+                    'user_id' => $proj->user_id,
+                    'title' => 'Application approved update',
+                    'message' => 'An application status was updated.',
+                ]);
+            }
 
             DB::commit();
 
@@ -628,8 +703,10 @@ class ApiProjectController extends Controller
 
     public function completed($id)
     {
-        [$businessProjectId, $err] = $this->resolveBusinessProjectId($id);
+        [$businessProjectId, $routeProjectId, $project, $err] = $this->resolveProject($id);
         if ($err) return $err;
+
+        $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
 
         DB::beginTransaction();
 
@@ -657,7 +734,7 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'Your Stripe account is not fully verified.']);
             }
 
-            $application = Application::where('project_id', $businessProjectId)
+            $application = Application::whereIn('project_id', $candidateProjectIds)
                 ->where('user_id', authId())
                 ->where('status', 'Approved')
                 ->first();
@@ -691,7 +768,7 @@ class ApiProjectController extends Controller
             ]);
 
             Notification::create([
-                'user_id' => $application->project->user_id,
+                'user_id' => $project->user_id,
                 'title' => 'Project completion request',
                 'message' => 'Project completion request sent successfully',
             ]);
@@ -706,14 +783,20 @@ class ApiProjectController extends Controller
 
     public function acceptCompleted($id)
     {
-        [$businessProjectId, $err] = $this->resolveBusinessProjectId($id);
+        [$businessProjectId, $routeProjectId, $project, $err] = $this->resolveProject($id);
         if ($err) return $err;
+
+        $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
 
         DB::beginTransaction();
 
         try {
-            $application = Application::join('projects', 'projects.id', 'applications.project_id')
-                ->where('applications.project_id', $businessProjectId)
+            // ✅ FIX join
+            $application = Application::join('projects', function ($join) {
+                    $join->on('projects.id', '=', 'applications.project_id')
+                        ->orOn('projects.my_row_id', '=', 'applications.project_id');
+                })
+                ->whereIn('applications.project_id', $candidateProjectIds)
                 ->where('projects.user_id', authId())
                 ->where('applications.status', 'Completion Requested')
                 ->select('applications.*')
@@ -761,7 +844,7 @@ class ApiProjectController extends Controller
             ]);
 
             Notification::create([
-                'user_id' => $application->project->user_id,
+                'user_id' => $project->user_id,
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
             ]);
@@ -815,11 +898,18 @@ class ApiProjectController extends Controller
                 'message' => 'Project completion has been cancelled.',
             ]);
 
-            Notification::create([
-                'user_id' => $application->project->user_id,
-                'title' => 'Project completion request accepted',
-                'message' => 'Project completion request has been accepted successfully',
-            ]);
+            // ✅ safe customer notification
+            $proj = Project::where('id', $application->project_id)
+                ->orWhere('my_row_id', $application->project_id)
+                ->first();
+
+            if ($proj) {
+                Notification::create([
+                    'user_id' => $proj->user_id,
+                    'title' => 'Project completion cancelled',
+                    'message' => 'A project completion was cancelled.',
+                ]);
+            }
 
             DB::commit();
             return response()->json(['status' => true, 'message' => 'Project cancelled successfully.']);
@@ -827,30 +917,5 @@ class ApiProjectController extends Controller
             DB::rollBack();
             return response()->json(['status' => false, 'message' => $e->getMessage()]);
         }
-    }
-
-    /**
-     * ✅ KEY FIX:
-     * Accepts either projects.id OR projects.my_row_id and returns the BUSINESS ID (projects.id)
-     * because applications.project_id stores projects.id.
-     */
-    private function resolveBusinessProjectId($project_id)
-    {
-        // If the id already matches projects.id, use it directly
-        $existsAsBusiness = Project::where('id', $project_id)->exists();
-        if ($existsAsBusiness) {
-            return [(int)$project_id, null];
-        }
-
-        // Otherwise, try as my_row_id
-        $businessId = Project::where('my_row_id', $project_id)->value('id');
-        if ($businessId) {
-            return [(int)$businessId, null];
-        }
-
-        return [null, response()->json([
-            'status' => false,
-            'message' => 'Project not found',
-        ], 404)];
     }
 }
