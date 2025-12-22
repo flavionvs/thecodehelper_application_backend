@@ -429,60 +429,88 @@ class ApiProjectController extends Controller
             return response()->json(['status' => false, 'message' => 'You can not apply your own project!']);
         }
 
-        $amount = request()->hours * request()->rate;
-        $admin_commission = 25;
-        $admin_amount = $admin_commission * $amount / 100;
-        $stripe_commission = 2.6;
-        $stripe_amount = $stripe_commission * $amount / 100;
-        $stripe_fee = 0.3;
-        $total_amount = $amount + $admin_amount + $stripe_amount + $stripe_fee;
+        DB::beginTransaction();
 
-        $application = Application::create([
-            'user_id' => authId(),
-            'project_id' => $businessProjectId,
-            'hours' => request()->hours,
-            'rate' => request()->rate,
-            'description' => request()->description,
-            'amount' => $amount,
-            'admin_commission' => $admin_commission,
-            'admin_amount' => $admin_amount,
-            'stripe_commission' => $stripe_commission,
-            'stripe_amount' => $stripe_amount,
-            'stripe_fee' => $stripe_fee,
-            'total_amount' => $total_amount,
-            'project_data' => $project,
-            'user_data' => User::where('id', authId())
-                ->select('users.first_name', 'users.email', 'users.first_name', 'users.phone')
-                ->first(),
-            'status' => 'Pending',
-        ]);
+        try {
+            $amount = request()->hours * request()->rate;
+            $admin_commission = 25;
+            $admin_amount = $admin_commission * $amount / 100;
+            $stripe_commission = 2.6;
+            $stripe_amount = $stripe_commission * $amount / 100;
+            $stripe_fee = 0.3;
+            $total_amount = $amount + $admin_amount + $stripe_amount + $stripe_fee;
 
-        if (request()->attachments) {
-            foreach (request()->attachments as $attachment) {
-                ApplicationAttachment::create([
-                    'application_id' => $application->id,
-                    'attachment' => fileSave($attachment, 'upload/application'),
+            $application = Application::create([
+                'user_id' => authId(),
+                'project_id' => $businessProjectId,
+                'hours' => request()->hours,
+                'rate' => request()->rate,
+                'description' => request()->description,
+                'amount' => $amount,
+                'admin_commission' => $admin_commission,
+                'admin_amount' => $admin_amount,
+                'stripe_commission' => $stripe_commission,
+                'stripe_amount' => $stripe_amount,
+                'stripe_fee' => $stripe_fee,
+                'total_amount' => $total_amount,
+                'project_data' => $project,
+                'user_data' => User::where('id', authId())
+                    ->select('users.first_name', 'users.email', 'users.first_name', 'users.phone')
+                    ->first(),
+                'status' => 'Pending',
+            ]);
+
+            if (request()->attachments) {
+                foreach (request()->attachments as $attachment) {
+                    ApplicationAttachment::create([
+                        'application_id' => $application->id,
+                        'attachment' => fileSave($attachment, 'upload/application'),
+                    ]);
+                }
+            }
+
+            // ✅ Notifications should NEVER crash apply()
+            try {
+                Notification::create([
+                    'user_id' => authId(),
+                    'title' => 'New project application',
+                    'message' => 'You have a new project application',
+                ]);
+
+                // ✅ FIX: Use $project->user_id (guaranteed), NOT $application->project->user_id (can be null)
+                Notification::create([
+                    'user_id' => $project->user_id,
+                    'title' => 'You have a new project application.',
+                    'message' => 'You have a new project application',
+                ]);
+            } catch (\Throwable $e) {
+                \Log::error('Apply notification failed: ' . $e->getMessage(), [
+                    'project_id' => $businessProjectId,
+                    'freelancer_id' => authId(),
                 ]);
             }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Application submitted successfully!',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            \Log::error('Apply failed: ' . $e->getMessage(), [
+                'project_id' => $businessProjectId,
+                'freelancer_id' => authId(),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Server Error',
+            ], 500);
         }
-
-        Notification::create([
-            'user_id' => authId(),
-            'title' => 'New project application',
-            'message' => 'You have a new project application',
-        ]);
-
-        Notification::create([
-            'user_id' => $application->project->user_id,
-            'title' => 'You have a new project application.',
-            'message' => 'You have a new project application',
-        ]);
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Application submitted successfully!',
-        ]);
     }
+
 
     public function application($project_id)
     {
