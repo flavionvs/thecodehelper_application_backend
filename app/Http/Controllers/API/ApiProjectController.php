@@ -265,17 +265,35 @@ class ApiProjectController extends Controller
 
             $project = Project::create($req);
 
+            /**
+             * ✅ CRITICAL BRIDGE FIX
+             * If production DB uses my_row_id as the real auto-increment,
+             * ensure projects.id is set to that value so applications.project_id works.
+             */
+            $routeId = $project->my_row_id ?? null;
+
+            // If id is missing/0 but we have my_row_id, bridge it
+            if ($routeId && (empty($project->id) || (int)$project->id === 0)) {
+                DB::table('projects')
+                    ->where('my_row_id', $routeId)
+                    ->update(['id' => $routeId]);
+
+                $project->id = $routeId;
+            }
+
             DB::commit();
 
             return response()->json([
                 'status' => true,
                 'message' => 'Projects created successfully!',
                 'data' => [
-                    'id' => $project->id,
+                    'id' => $project->id,                       // business id (must be non-zero)
+                    'route_id' => $project->my_row_id ?? $project->id, // route id for frontend
                     'status' => $project->status,
                     'payment_status' => $project->payment_status,
                 ],
             ], 201);
+
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -284,6 +302,7 @@ class ApiProjectController extends Controller
             ]);
         }
     }
+
 
     public function update($id)
     {

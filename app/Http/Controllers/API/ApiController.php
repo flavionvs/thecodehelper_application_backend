@@ -242,17 +242,29 @@ class ApiController extends Controller
         if ($project) {
             foreach ($project as $item) {
 
-                // applied check (safe)
+                // ✅ Determine IDs safely
+                $routeId = $item->my_row_id ?? null;
+                if (!$routeId) {
+                    $routeId = $item->id ?? null;
+                }
+
+                // ✅ Guarantee non-zero business id (frontend + applications rely on this)
+                $businessId = $item->id ?? null;
+                if (empty($businessId) || (int)$businessId === 0) {
+                    $businessId = $routeId; // fallback so frontend doesn't get "missing"
+                }
+
+                // ✅ applied check uses business id (applications.project_id expects projects.id)
                 $applied = false;
-                if ($viewerId) {
+                if ($viewerId && $businessId) {
                     $applied = Application::where('user_id', $viewerId)
-                        ->where('project_id', $item->id)
+                        ->where('project_id', $businessId)
                         ->exists();
                 }
 
                 $array = [];
-                $array['id'] = $item->id;                 // business id
-                $array['route_id'] = $item->my_row_id;    // ✅ REQUIRED for frontend modal
+                $array['id'] = $businessId;        // ✅ never 0
+                $array['route_id'] = $routeId;     // ✅ always present
                 $array['category_id'] = $item->category_id;
                 $array['title'] = $item->title;
                 $array['slug'] = $item->slug;
@@ -275,6 +287,7 @@ class ApiController extends Controller
             'data' => $data
         ]);
     }
+
 
     public function projectDetail($slug){
         $project = Project::where('slug',$slug)->first();
