@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 
-namespace App\Http\Controllers\Admin\Auth;
+namespace App\Http\Controllers\Superadmin\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Providers\RouteServiceProvider;
@@ -40,3 +40,4 @@ class VerificationController extends Controller
         $this->middleware('throttle:6,1')->only('verify', 'resend');
     }
 }
+

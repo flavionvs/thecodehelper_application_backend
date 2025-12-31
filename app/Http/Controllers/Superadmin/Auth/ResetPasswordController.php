@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 
-namespace App\Http\Controllers\Admin\Auth;
+namespace App\Http\Controllers\Superadmin\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Providers\RouteServiceProvider;
@@ -28,3 +28,4 @@ class ResetPasswordController extends Controller
      */
     protected $redirectTo = RouteServiceProvider::HOME;
 }
+
