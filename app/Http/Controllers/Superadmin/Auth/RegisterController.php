@@ -1,6 +1,5 @@
 ﻿<?php 
 
-
 namespace App\Http\Controllers\Superadmin\Auth;
 
 use App\Http\Controllers\Controller;
