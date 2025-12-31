@@ -18,7 +18,8 @@ Route::group(['middleware'=>['HttpsProtocol']], function () {
     $as = guardName().'.';
 
     Route::group(['namespace'=>'Superadmin','middleware'=>$auth_middleware, 'as' => $as], function () {    
-        Route::resource('vendor', 'Superadmin\VendorController');    
+        // ✅ FIX: remove "Superadmin\" because namespace is already Superadmin
+        Route::resource('vendor', 'VendorController');    
         Route::post('/update-profile', 'UserController@updateProfile');  
     });
 
@@ -26,11 +27,8 @@ Route::group(['middleware'=>['HttpsProtocol']], function () {
     // that's why their controller belong to the Common Folder
     Route::group(['namespace'=>'Common','middleware'=>$auth_middleware, 'as' => $as], function () {    
 
-
-      
         // Route::resource('proposal-beneficiary', 'ProposalBeneficiaryController');
-      
-        
+
         Route::get('my-profile', 'HomeController@myProfile');
         Route::post('update-profile', 'HomeController@updateProfile');
 
@@ -62,11 +60,11 @@ Route::group(['middleware'=>['HttpsProtocol']], function () {
         Route::get('get-permissions/{role_id}', 'RoleAndPermission\PermissionController@getPermissions');        
         Route::post('assign-role', 'RoleAndPermission\PermissionController@assignRole');
 
+        // ✅ FIX: remove "Common\" because namespace is already Common
+        Route::resource('vertical', 'VerticalController');
+        Route::resource('service', 'ServiceController');
 
-        Route::resource('vertical', 'Common\VerticalController');
-        Route::resource('service', 'Common\ServiceController');
         Route::resource('source', 'SourceController');
-
 
         Route::get('get-service/{vertical_id}', 'SourceController@getservice');
     
