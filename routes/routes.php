@@ -13,34 +13,33 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
     $auth_middleware = 'auth:' . guardName();
     $as = guardName() . '.';
 
-    /*
-     * ✅ Superadmin group
-     * IMPORTANT:
-     * When you use 'namespace' => 'Superadmin', DO NOT prefix controllers with "Superadmin\"
+    /**
+     * Superadmin Routes
+     * Folder exists: app/Http/Controllers/Superadmin/VendorController.php
      */
     Route::group([
         'namespace'  => 'Superadmin',
         'middleware' => $auth_middleware,
         'as'         => $as
     ], function () {
-
-        // ✅ Was: 'Superadmin\VendorController'  (WRONG - double namespace)
+        // ✅ FIX: Do NOT prefix "Superadmin\" here because namespace is already Superadmin
         Route::resource('vendor', 'VendorController');
 
-        Route::post('/update-profile', 'UserController@updateProfile');
+        // This points to Superadmin\UserController@updateProfile
+        // But your file list shows Common/UserController.php, not Superadmin/UserController.php
+        // ✅ FIX: point it to Common\UserController explicitly with full namespace string
+        Route::post('/update-profile', '\App\Http\Controllers\Common\UserController@updateProfile');
     });
 
-    /*
-     * ✅ Common group
-     * Same rule: if namespace = 'Common', do NOT prefix controllers with "Common\"
+    /**
+     * Common Routes
+     * Folder exists: app/Http/Controllers/Common/*
      */
     Route::group([
         'namespace'  => 'Common',
         'middleware' => $auth_middleware,
         'as'         => $as
     ], function () {
-
-        // Route::resource('proposal-beneficiary', 'ProposalBeneficiaryController');
 
         Route::get('my-profile', 'HomeController@myProfile');
         Route::post('update-profile', 'HomeController@updateProfile');
@@ -68,22 +67,27 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
         Route::get('payment-history', 'HomeController@paymentHistory');
 
         Route::resource('role', 'RoleAndPermission\RoleController');
-
         Route::resource('permission', 'RoleAndPermission\PermissionController');
         Route::get('get-permissions/{role_id}', 'RoleAndPermission\PermissionController@getPermissions');
         Route::post('assign-role', 'RoleAndPermission\PermissionController@assignRole');
 
-        // ✅ Was: 'Common\VerticalController' and 'Common\ServiceController' (WRONG - double namespace)
+        // ✅ FIX: Do NOT prefix "Common\" here because namespace is already Common
         Route::resource('vertical', 'VerticalController');
         Route::resource('service', 'ServiceController');
 
-        Route::resource('source', 'SourceController');
-
-        Route::get('get-service/{vertical_id}', 'SourceController@getservice');
+        /**
+         * IMPORTANT:
+         * Your routes file had SourceController + get-service route,
+         * but your controller list DOES NOT include Common/SourceController.php
+         *
+         * ✅ FIX: Comment these out until you add SourceController.
+         */
+        // Route::resource('source', 'SourceController');
+        // Route::get('get-service/{vertical_id}', 'SourceController@getservice');
     });
 
-    /*
-     * ✅ Admin + Superadmin dashboard group
+    /**
+     * Dashboard Routes for admin/superadmin
      */
     Route::group([
         'namespace'  => 'Common',
@@ -97,5 +101,4 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
             Route::get('/get-dashboard-chart2', 'HomeController@getDashboardChart2');
         }
     });
-
 });
