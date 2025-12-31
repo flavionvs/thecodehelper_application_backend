@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Superadmin\Auth;
+namespace App\Http\Controllers\Admin\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Providers\RouteServiceProvider;
@@ -16,21 +16,20 @@ class LoginController extends Controller
 {
     use RedirectsUsers, ThrottlesLogins;
 
-    protected $redirectTo = 'superadmin/dashboard';
+    protected $redirectTo = 'admin/dashboard';
 
     public function __construct()
     {
-        $this->middleware('guest:superadmin')->except('logout');
+        $this->middleware('guest:admin')->except('logout');
     }
 
-    public function showLoginForm()
+    public function showLoginForm(Request $request)
     {
-        // ✅ FIX (419 Page Expired):
-        // Force Laravel to "touch" the session on GET so it emits the session cookie.
-        // Without this, the browser may not store/send the session cookie, and CSRF fails on POST.
-        session()->put('tch_login_touch', time());
+        // Force session to start and write cookie (helps prevent 419 if cookies are not being created)
+        $request->session()->put('login_ts', time());
 
-        return view('auth.superadmin.login');
+        // ✅ FIX: Admin must use admin login view (not superadmin)
+        return view('auth.admin.login');
     }
 
     /**
@@ -44,7 +43,12 @@ class LoginController extends Controller
     public function login(Request $request)
     {
         $this->validateLogin($request);
-        $this->checkSuperadmin($request);
+
+        // ✅ FIX: checkAdmin may return a failed response; we must return it
+        $fail = $this->checkAdmin($request);
+        if ($fail) {
+            return $fail;
+        }
 
         // If the class is using the ThrottlesLogins trait, we can automatically throttle
         // the login attempts for this application. We'll key this by the username and
@@ -72,13 +76,15 @@ class LoginController extends Controller
     }
 
     // Check only admin will be logged in
-    public function checkSuperadmin($request)
+    public function checkAdmin(Request $request)
     {
-        $data = \App\Models\User::whereEmail($request->email)->first();
+        $data = User::whereEmail($request->email)->first();
 
-        if (empty($data) || $data->role !== 'Superadmin') {
+        if (empty($data) || $data->role != 'Admin') {
             return $this->sendFailedLoginResponse($request);
         }
+
+        return null;
     }
 
     /**
@@ -94,7 +100,6 @@ class LoginController extends Controller
         $request->validate([
             $this->username() => 'required|string',
             'password' => 'required|string',
-            // 'g-recaptcha-response' => 'required|recaptchav3:login,0.5'
         ]);
     }
 
@@ -107,7 +112,8 @@ class LoginController extends Controller
     protected function attemptLogin(Request $request)
     {
         return $this->guard()->attempt(
-            $this->credentials($request), $request->filled('remember')
+            $this->credentials($request),
+            $request->filled('remember')
         );
     }
 
@@ -137,9 +143,10 @@ class LoginController extends Controller
         if ($response = $this->authenticated($request, $this->guard()->user())) {
             return $response;
         }
+
         return $request->wantsJson()
-                    ? new JsonResponse([], 204)
-                    : redirect()->intended($this->redirectPath());
+            ? new JsonResponse([], 204)
+            : redirect()->intended($this->redirectPath());
     }
 
     /**
@@ -187,18 +194,17 @@ class LoginController extends Controller
      */
     public function logout(Request $request)
     {
-        // dd($request->all());
         $this->guard()->logout();
 
         // $request->session()->invalidate();
-
         // $request->session()->regenerateToken();
 
+        // ✅ FIX: Do not call auth()->logout() (logs out default guard and can cause side effects)
         if ($response = $this->loggedOut($request)) {
             return $response;
         }
 
-        return redirect('superadmin/login');
+        return redirect('admin/login');
     }
 
     /**
@@ -219,6 +225,6 @@ class LoginController extends Controller
      */
     protected function guard()
     {
-        return Auth::guard('superadmin');
+        return Auth::guard('admin');
     }
 }
