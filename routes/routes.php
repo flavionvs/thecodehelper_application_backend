@@ -22,12 +22,11 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
         'middleware' => $auth_middleware,
         'as'         => $as
     ], function () {
-        // ✅ FIX: Do NOT prefix "Superadmin\" here because namespace is already Superadmin
+
+        // VendorController lives under app/Http/Controllers/Superadmin/VendorController.php
         Route::resource('vendor', 'VendorController');
 
-        // This points to Superadmin\UserController@updateProfile
-        // But your file list shows Common/UserController.php, not Superadmin/UserController.php
-        // ✅ FIX: point it to Common\UserController explicitly with full namespace string
+        // Explicit full namespace to Common\UserController
         Route::post('/update-profile', '\App\Http\Controllers\Common\UserController@updateProfile');
     });
 
@@ -71,19 +70,14 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
         Route::get('get-permissions/{role_id}', 'RoleAndPermission\PermissionController@getPermissions');
         Route::post('assign-role', 'RoleAndPermission\PermissionController@assignRole');
 
-        // ✅ FIX: Do NOT prefix "Common\" here because namespace is already Common
         Route::resource('vertical', 'VerticalController');
         Route::resource('service', 'ServiceController');
 
         /**
-         * IMPORTANT:
-         * Your routes file had SourceController + get-service route,
-         * but your controller list DOES NOT include Common/SourceController.php
-         *
-         * ✅ FIX: Comment these out until you add SourceController.
+         * FIX (CRITICAL):
+         * Removed routes referencing missing Common\SourceController.
+         * If you later add SourceController, re-add the routes.
          */
-        // Route::resource('source', 'SourceController');
-        // Route::get('get-service/{vertical_id}', 'SourceController@getservice');
     });
 
     /**
@@ -102,3 +96,4 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
         }
     });
 });
+
