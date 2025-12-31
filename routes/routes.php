@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use Illuminate\Support\Facades\Route;
 
@@ -18,7 +18,7 @@ Route::group(['middleware'=>['HttpsProtocol']], function () {
     $as = guardName().'.';
 
     Route::group(['namespace'=>'Superadmin','middleware'=>$auth_middleware, 'as' => $as], function () {    
-        Route::resource('vendor', 'VendorController');    
+        Route::resource('vendor', 'Superadmin\VendorController');    
         Route::post('/update-profile', 'UserController@updateProfile');  
     });
 
@@ -63,8 +63,8 @@ Route::group(['middleware'=>['HttpsProtocol']], function () {
         Route::post('assign-role', 'RoleAndPermission\PermissionController@assignRole');
 
 
-        Route::resource('vertical', 'VerticalController');
-        Route::resource('service', 'ServiceController');
+        Route::resource('vertical', 'Common\VerticalController');
+        Route::resource('service', 'Common\ServiceController');
         Route::resource('source', 'SourceController');
 
 
