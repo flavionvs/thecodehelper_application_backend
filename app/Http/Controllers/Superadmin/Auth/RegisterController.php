@@ -1,4 +1,5 @@
-﻿<?php
+﻿<?php 
+
 
 namespace App\Http\Controllers\Superadmin\Auth;
 
@@ -38,7 +39,17 @@ class RegisterController extends Controller
      */
     public function __construct()
     {
-        $this->middleware('guest');
+        $this->middleware('guest:'.guardName());
+    }
+
+    /**
+     * Determine where to redirect users after registration.
+     *
+     * @return string
+     */
+    protected function redirectTo()
+    {
+        return '/' . guardName() . '/dashboard';
     }
 
     /**
@@ -71,4 +82,3 @@ class RegisterController extends Controller
         ]);
     }
 }
-
