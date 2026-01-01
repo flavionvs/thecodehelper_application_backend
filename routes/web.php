@@ -6,6 +6,19 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/cookie-test', function () {
+    return response('ok')->cookie(
+        'tch_cookie_test',
+        '1',
+        5,
+        '/',
+        config('session.domain'),
+        true,   // secure
+        true,   // httpOnly
+        false,  // raw
+        'Lax'
+    );
+});
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -36,3 +49,4 @@ use Illuminate\Support\Facades\Route;
         Route::get('/apply', 'CartController@apply');    
 
     });
+
