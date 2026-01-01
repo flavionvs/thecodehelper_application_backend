@@ -31,8 +31,12 @@ class StripeWebhookController extends Controller
             $projectId = $intent->metadata->project_id ?? null;
 
             if (!$projectId) {
-                Log::error('Stripe payment missing project_id', ['intent' => $intent->id]);
-                return response()->json(['error' => 'Missing project_id'], 400);
+                // ✅ Do NOT 400 — just ignore unknown/test intents so Stripe doesn't retry forever
+                Log::warning('Stripe payment_intent.succeeded missing project_id (ignored)', [
+                    'intent' => $intent->id,
+                    'metadata' => $intent->metadata ?? null,
+                ]);
+                return response()->json(['received' => true], 200);
             }
 
             // Prevent duplicate processing
