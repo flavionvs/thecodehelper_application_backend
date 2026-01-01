@@ -128,7 +128,7 @@ return [
 
     'cookie' => env(
         'SESSION_COOKIE',
-        Str::slug(env('APP_NAME', 'laravel'), '_').'_session'
+        Str::slug(env('APP_NAME', 'laravel'), '_') . '_session'
     ),
 
     /*
@@ -168,7 +168,7 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    'secure' => env('SESSION_SECURE_COOKIE', false),
 
     /*
     |--------------------------------------------------------------------------
@@ -197,5 +197,17 @@ return [
     */
 
     'same_site' => 'lax',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Use Cookies To Store Session IDs
+    |--------------------------------------------------------------------------
+    |
+    | This option controls whether cookies should be used to store the session
+    | ID. If disabled, the session ID will be passed via the URL (not desired).
+    |
+    */
+
+    'use_cookies' => true,
 
 ];
