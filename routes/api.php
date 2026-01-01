@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Route;
 
 
 Route::group(['middleware' => ['api']], function($router) {
+        // ✅ Stripe Webhook (NO auth, NO jwt)
+    Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
     Route::post('send-message', 'API\ApiController@sendMessage');
     Route::post('filter', 'API\ApiController@filter');

@@ -350,22 +350,42 @@ class ApiController extends Controller
 
     public function payment(Request $request)
     {
-        Stripe::setApiKey(config('services.stripe.secret')); // Your platform's secret key
+        Stripe::setApiKey(config('services.stripe.secret'));
 
         try {
             $apps = Application::find($request->applicationId);
+
+            \Log::info('Creating Stripe payment', [
+                'application_id' => $apps->id,
+                'project_id' => $apps->project_id,
+                'amount' => roundOff($apps->total_amount),
+            ]);
+
             $paymentIntent = PaymentIntent::create([
                 'amount' => roundOff($apps->total_amount) * 100,
                 'currency' => 'usd',
                 'payment_method' => $request->paymentMethod,
                 'confirm' => true,
+
+                // ✅ REQUIRED for webhook
+                'metadata' => [
+                    'application_id' => $apps->id,
+                    'project_id' => $apps->project_id,
+                    'user_id' => auth()->id(),
+                ],
+
                 'automatic_payment_methods' => [
                     'enabled' => true,
                     'allow_redirects' => 'never',
                 ],
             ]);
+
             if ($paymentIntent->status === 'succeeded') {
-                return response()->json(['status' => true, 'message' => 'Payment succeeded!', 'paymentIntent' => $paymentIntent]);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Payment succeeded!',
+                    'paymentIntent' => $paymentIntent
+                ]);
             } elseif ($paymentIntent->status === 'requires_action') {
                 return response()->json([
                     'requires_action' => true,
@@ -376,6 +396,7 @@ class ApiController extends Controller
             }
 
         } catch (\Exception $e) {
+            \Log::error('Stripe payment error', ['error' => $e->getMessage()]);
             return response()->json(['error' => $e->getMessage()]);
         }
     }
