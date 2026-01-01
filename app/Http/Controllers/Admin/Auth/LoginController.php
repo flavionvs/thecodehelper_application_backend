@@ -23,9 +23,14 @@ class LoginController extends Controller
         $this->middleware('guest:admin')->except('logout');
     }
 
-    public function showLoginForm()
+    public function showLoginForm(Request $request)
     {
-        return redirect('/');
+        // Ensure session exists
+        $request->session()->put('login_ts', time());
+
+        // 🔑 FORCE Laravel to issue the session cookie
+        $request->session()->regenerate();
+
         return view('auth.admin.login');
     }
 

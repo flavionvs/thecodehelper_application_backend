@@ -24,10 +24,12 @@ class LoginController extends Controller
 
     public function showLoginForm(Request $request)
     {
-        // Force session to start and write cookie (helps prevent 419 if cookies are not being created)
+        // Ensure session exists
         $request->session()->put('login_ts', time());
 
-        // ✅ FIX: Superadmin must use superadmin login view
+        // 🔑 FORCE Laravel to issue the session cookie
+        $request->session()->regenerate();
+
         return view('auth.superadmin.login');
     }
 
