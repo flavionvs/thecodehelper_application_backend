@@ -353,25 +353,86 @@ class ApiController extends Controller
         Stripe::setApiKey(config('services.stripe.secret'));
 
         try {
-            $apps = Application::find($request->applicationId);
+            // ✅ Log incoming payload (to prove what frontend sends)
+            \Log::info('payment() request payload', [
+                'applicationId'   => $request->input('applicationId'),
+                'application_id'  => $request->input('application_id'),
+                'paymentMethod'   => $request->input('paymentMethod'),
+                'all'             => $request->all(),
+            ]);
+
+            // ✅ Accept both possible field names
+            $appId = $request->input('applicationId') ?? $request->input('application_id');
+
+            // ✅ Validate required fields early
+            if (!$appId || $appId === 'undefined' || $appId === 'null') {
+                \Log::error('Missing application id for payment', ['all' => $request->all()]);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Missing application id (applicationId/application_id).'
+                ], 422);
+            }
+
+            $paymentMethod = $request->input('paymentMethod');
+            if (!$paymentMethod) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Missing paymentMethod.'
+                ], 422);
+            }
+
+            // ✅ Load application (fail fast if invalid)
+            $apps = Application::find($appId);
+            if (!$apps) {
+                \Log::error('Invalid application id for payment', ['appId' => $appId]);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Invalid application id.'
+                ], 422);
+            }
+
+            // ✅ Validate required DB fields
+            if (empty($apps->project_id) || (int)$apps->project_id === 0) {
+                \Log::error('Application missing project_id', ['application_id' => $apps->id, 'project_id' => $apps->project_id]);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Application is missing project_id.'
+                ], 422);
+            }
+
+            // ✅ Stripe requires integer cents
+            $amountCents = (int) round(roundOff($apps->total_amount) * 100);
+
+            if ($amountCents <= 0) {
+                \Log::error('Invalid amount calculated for payment', [
+                    'application_id' => $apps->id,
+                    'total_amount'   => $apps->total_amount,
+                    'amount_cents'   => $amountCents,
+                ]);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Invalid amount.'
+                ], 422);
+            }
 
             \Log::info('Creating Stripe payment', [
                 'application_id' => $apps->id,
-                'project_id' => $apps->project_id,
-                'amount' => roundOff($apps->total_amount),
+                'project_id'     => $apps->project_id,
+                'total_amount'   => $apps->total_amount,
+                'amount_cents'   => $amountCents,
             ]);
 
             $paymentIntent = PaymentIntent::create([
-                'amount' => roundOff($apps->total_amount) * 100,
+                'amount' => $amountCents,
                 'currency' => 'usd',
-                'payment_method' => $request->paymentMethod,
+                'payment_method' => $paymentMethod,
                 'confirm' => true,
 
-                // ✅ REQUIRED for webhook
+                // ✅ REQUIRED for webhook finalization
                 'metadata' => [
-                    'application_id' => $apps->id,
-                    'project_id' => $apps->project_id,
-                    'user_id' => auth()->id(),
+                    'application_id' => (string) $apps->id,
+                    'project_id'     => (string) $apps->project_id,
+                    'user_id'        => (string) auth()->id(),
                 ],
 
                 'automatic_payment_methods' => [
@@ -380,26 +441,41 @@ class ApiController extends Controller
                 ],
             ]);
 
+            // ✅ Return states cleanly
             if ($paymentIntent->status === 'succeeded') {
                 return response()->json([
                     'status' => true,
                     'message' => 'Payment succeeded!',
                     'paymentIntent' => $paymentIntent
                 ]);
-            } elseif ($paymentIntent->status === 'requires_action') {
+            }
+
+            if ($paymentIntent->status === 'requires_action') {
                 return response()->json([
                     'requires_action' => true,
                     'payment_intent_client_secret' => $paymentIntent->client_secret,
                 ]);
-            } else {
-                return response()->json(['error' => 'Payment failed or pending']);
             }
 
+            return response()->json([
+                'status' => false,
+                'message' => 'Payment failed or pending.',
+                'paymentIntent' => $paymentIntent
+            ], 400);
+
         } catch (\Exception $e) {
-            \Log::error('Stripe payment error', ['error' => $e->getMessage()]);
-            return response()->json(['error' => $e->getMessage()]);
+            \Log::error('Stripe payment error', [
+                'error' => $e->getMessage(),
+                'trace' => substr($e->getTraceAsString(), 0, 1500),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
+
 
     public function payment_old(Request $request)
     {
