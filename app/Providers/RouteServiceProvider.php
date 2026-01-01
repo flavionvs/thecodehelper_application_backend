@@ -12,69 +12,41 @@ class RouteServiceProvider extends ServiceProvider
 {
     /**
      * The path to the "home" route for your application.
-     *
-     * This is used by Laravel authentication to redirect users after login.
-     *
-     * @var string
      */
     public const HOME = '/home';
 
     /**
-     * The controller namespace for the application.
-     *
-     * When present, controller route declarations will automatically be prefixed with this namespace.
-     *
-     * @var string|null
+     * Bootstrap any application services.
      */
-    protected $namespace = 'App\\Http\\Controllers';
-
-    /**
-     * Define your route model bindings, pattern filters, etc.
-     *
-     * @return void
-     */
-    public function boot()
+    public function boot(): void
     {
         $this->configureRateLimiting();
 
         $this->routes(function () {
-            Route::prefix('api')
-                ->middleware('api')
-                ->namespace($this->namespace)
+            // API routes
+            Route::middleware('api')
+                ->prefix('api')
                 ->group(base_path('routes/api.php'));
 
+            // Web routes (CRITICAL)
             Route::middleware('web')
-                ->namespace($this->namespace)
-                ->group(base_path('routes/web.php'));  
+                ->group(base_path('routes/web.php'));
 
-            
-            Route::prefix(guardName())
-                    ->middleware('web')
-                    ->namespace($this->namespace)
-                    ->group(base_path('routes/routes.php'));           
-            
-                
-            Route::prefix('admin')
-                ->middleware('web')
-                ->namespace($this->namespace)
-                ->group(base_path('routes/admin.php'));           
-          
-            Route::prefix('superadmin')
-                ->middleware('web')
-                ->namespace($this->namespace)
-                ->group(base_path('routes/superadmin.php'));           
-            });
+            // Superadmin routes (CRITICAL)
+            Route::middleware('web')
+                ->prefix('superadmin')
+                ->group(base_path('routes/superadmin.php'));
+        });
     }
 
     /**
      * Configure the rate limiters for the application.
-     *
-     * @return void
      */
-    protected function configureRateLimiting()
+    protected function configureRateLimiting(): void
     {
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
+            return Limit::perMinute(60)
+                ->by(optional($request->user())->id ?: $request->ip());
         });
     }
 }
