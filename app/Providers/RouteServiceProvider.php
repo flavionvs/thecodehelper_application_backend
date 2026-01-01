@@ -12,8 +12,17 @@ class RouteServiceProvider extends ServiceProvider
 {
     /**
      * The path to the "home" route for your application.
+     *
+     * This is used by Laravel authentication to redirect users after login.
      */
     public const HOME = '/home';
+
+    /**
+     * The controller namespace for the application.
+     *
+     * When present, controller route declarations will automatically be prefixed with this namespace.
+     */
+    protected string $namespace = 'App\\Http\\Controllers';
 
     /**
      * Bootstrap any application services.
@@ -24,17 +33,32 @@ class RouteServiceProvider extends ServiceProvider
 
         $this->routes(function () {
             // API routes
-            Route::middleware('api')
-                ->prefix('api')
+            Route::prefix('api')
+                ->middleware('api')
+                ->namespace($this->namespace)
                 ->group(base_path('routes/api.php'));
 
-            // Web routes (CRITICAL)
+            // Web routes
             Route::middleware('web')
+                ->namespace($this->namespace)
                 ->group(base_path('routes/web.php'));
 
-            // Superadmin routes (CRITICAL)
-            Route::middleware('web')
-                ->prefix('superadmin')
+            // Front / dynamic guard routes (your legacy behavior)
+            Route::prefix(guardName())
+                ->middleware('web')
+                ->namespace($this->namespace)
+                ->group(base_path('routes/routes.php'));
+
+            // Admin routes
+            Route::prefix('admin')
+                ->middleware('web')
+                ->namespace($this->namespace)
+                ->group(base_path('routes/admin.php'));
+
+            // Superadmin routes
+            Route::prefix('superadmin')
+                ->middleware('web')
+                ->namespace($this->namespace)
                 ->group(base_path('routes/superadmin.php'));
         });
     }
