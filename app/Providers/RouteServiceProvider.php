@@ -21,8 +21,13 @@ class RouteServiceProvider extends ServiceProvider
      * The controller namespace for the application.
      *
      * When present, controller route declarations will automatically be prefixed with this namespace.
+     *
+     * IMPORTANT:
+     * Do NOT type-hint this property (no "string"), because the parent class defines it without a type.
+     *
+     * @var string|null
      */
-    protected string $namespace = 'App\\Http\\Controllers';
+    protected $namespace = 'App\\Http\\Controllers';
 
     /**
      * Bootstrap any application services.
@@ -63,7 +68,6 @@ class RouteServiceProvider extends ServiceProvider
         });
     }
 
-    
     /**
      * Configure the rate limiters for the application.
      */
