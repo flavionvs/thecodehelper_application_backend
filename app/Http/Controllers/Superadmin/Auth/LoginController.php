@@ -1,9 +1,8 @@
 <?php
 
-namespace App\Http\Controllers\Admin\Auth;
+namespace App\Http\Controllers\Superadmin\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Providers\RouteServiceProvider;
 use Illuminate\Foundation\Auth\RedirectsUsers;
 use Illuminate\Foundation\Auth\ThrottlesLogins;
 use Illuminate\Http\JsonResponse;
@@ -16,11 +15,11 @@ class LoginController extends Controller
 {
     use RedirectsUsers, ThrottlesLogins;
 
-    protected $redirectTo = 'admin/dashboard';
+    protected $redirectTo = 'superadmin/dashboard';
 
     public function __construct()
     {
-        $this->middleware('guest:admin')->except('logout');
+        $this->middleware('guest:superadmin')->except('logout');
     }
 
     public function showLoginForm(Request $request)
@@ -28,8 +27,8 @@ class LoginController extends Controller
         // Force session to start and write cookie (helps prevent 419 if cookies are not being created)
         $request->session()->put('login_ts', time());
 
-        // ✅ FIX: Admin must use admin login view (not superadmin)
-        return view('auth.admin.login');
+        // ✅ FIX: Superadmin must use superadmin login view
+        return view('auth.superadmin.login');
     }
 
     /**
@@ -44,8 +43,8 @@ class LoginController extends Controller
     {
         $this->validateLogin($request);
 
-        // ✅ FIX: checkAdmin may return a failed response; we must return it
-        $fail = $this->checkAdmin($request);
+        // ✅ FIX: checkSuperadmin may return a failed response; we must return it
+        $fail = $this->checkSuperadmin($request);
         if ($fail) {
             return $fail;
         }
@@ -68,19 +67,20 @@ class LoginController extends Controller
         }
 
         // If the login attempt was unsuccessful we will increment the number of attempts
-        // to login and redirect the user back to the login form. Of course, when this
-        // user surpasses their maximum number of attempts they will get locked out.
+        // to login and redirect the user back to the login form.
         $this->incrementLoginAttempts($request);
 
         return $this->sendFailedLoginResponse($request);
     }
 
-    // Check only admin will be logged in
-    public function checkAdmin(Request $request)
+    // Check only superadmin will be logged in
+    public function checkSuperadmin(Request $request)
     {
         $data = User::whereEmail($request->email)->first();
 
-        if (empty($data) || $data->role != 'Admin') {
+        // IMPORTANT: adjust this role string to match your database exactly
+        // Examples: 'Superadmin' or 'Super Admin'
+        if (empty($data) || $data->role != 'Superadmin') {
             return $this->sendFailedLoginResponse($request);
         }
 
@@ -204,7 +204,7 @@ class LoginController extends Controller
             return $response;
         }
 
-        return redirect('admin/login');
+        return redirect('superadmin/login');
     }
 
     /**
@@ -225,6 +225,6 @@ class LoginController extends Controller
      */
     protected function guard()
     {
-        return Auth::guard('admin');
+        return Auth::guard('superadmin');
     }
 }
