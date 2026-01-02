@@ -696,6 +696,18 @@ class ApiProjectController extends Controller
 
             $applied->status = 'Approved';
             $applied->save();
+            
+            // ✅ Auto-update project after payment + approval
+            $proj = Project::where('id', $applied->project_id)
+                ->orWhere('my_row_id', $applied->project_id)
+                ->first();
+
+            if ($proj) {
+                $proj->payment_status = 'paid';
+                $proj->status = 'in_progress';
+                $proj->selected_application_id = $applied->my_row_id ?? $applied->id;
+                $proj->save();
+            }
 
             $appPk = $this->applicationPk($applied);
 
