@@ -29,49 +29,75 @@ use Illuminate\Support\Facades\Http;
 use Stripe\Stripe;
 use Stripe\Account;
 use Stripe\AccountLink;
-
 use Stripe\PaymentIntent;
 
 class ApiController extends Controller
 {
-    public function dashboard(){
-        if(authUser()->role == 'Freelancer'){
+    /**
+     * IMPORTANT NOTE (Jan 2026):
+     * - applications table primary key is my_row_id (AUTO_INCREMENT, but INVISIBLE).
+     * - applications.id is NOT auto-increment and is coming as 0 for new rows.
+     * - Therefore payment + selection must use my_row_id for new applications.
+     * - We keep backward compatibility by trying my_row_id first, then id.
+     */
+
+    private function findApplicationByAnyId($id)
+    {
+        $id = is_numeric($id) ? (int) $id : 0;
+        if ($id <= 0) return null;
+
+        // Because my_row_id is INVISIBLE, selecting applications.* will not include it.
+        // So we explicitly select it.
+        return Application::query()
+            ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
+            ->where('applications.my_row_id', $id)
+            ->orWhere('applications.id', $id) // backward compatibility (older records)
+            ->first();
+    }
+
+    public function dashboard()
+    {
+        if (authUser()->role == 'Freelancer') {
             $approved_projects = DB::table('applications')
-                        ->join('users', 'users.id', '=', 'applications.user_id')
-                        ->where('user_id', authId())
-                        ->where('applications.status', 'Approved')
-                        ->get()
-                        ->count();
+                ->join('users', 'users.id', '=', 'applications.user_id')
+                ->where('user_id', authId())
+                ->where('applications.status', 'Approved')
+                ->get()
+                ->count();
+
             $applied_projects = DB::table('applications')
-                        ->join('users', 'users.id', '=', 'applications.user_id')
-                        ->where('user_id', authId())
-                        ->where('applications.status', 'Pending')
-                        ->get()
-                        ->count();
+                ->join('users', 'users.id', '=', 'applications.user_id')
+                ->where('user_id', authId())
+                ->where('applications.status', 'Pending')
+                ->get()
+                ->count();
 
             $message = DB::table('messages')->where('to', authId())->where('is_read', 0)->count();
             $data['freelancer_approved_projects'] = $approved_projects;
             $data['freelancer_applied_projects'] = $applied_projects;
             $data['freelancer_message_count'] = $message;
-        }else{
+        } else {
             $approved_projects = DB::table('applications')
-                        ->join('projects', 'projects.id', 'applications.project_id')
-                        ->where('projects.user_id', authId())
-                        ->where('applications.status', 'Approved')
-                        ->get()
-                        ->count();
+                ->join('projects', 'projects.id', 'applications.project_id')
+                ->where('projects.user_id', authId())
+                ->where('applications.status', 'Approved')
+                ->get()
+                ->count();
+
             $in_progress_projects = DB::table('applications')
-                        ->join('projects', 'projects.id', 'applications.project_id')
-                        ->where('projects.user_id', authId())
-                        ->whereIn('applications.status', ['Approved','Completion Requested'])
-                        ->get()
-                        ->count();
+                ->join('projects', 'projects.id', 'applications.project_id')
+                ->where('projects.user_id', authId())
+                ->whereIn('applications.status', ['Approved', 'Completion Requested'])
+                ->get()
+                ->count();
+
             $completed_projects = DB::table('applications')
-                        ->join('projects', 'projects.id', 'applications.project_id')
-                        ->where('projects.user_id', authId())
-                        ->where('applications.status', 'Completed')
-                        ->get()
-                        ->count();
+                ->join('projects', 'projects.id', 'applications.project_id')
+                ->where('projects.user_id', authId())
+                ->where('applications.status', 'Completed')
+                ->get()
+                ->count();
+
             $projects = DB::table('projects')->where('user_id', authId())->get()->count();
             $message = DB::table('messages')->where('to', authId())->where('is_read', 0)->count();
             $data['client_projects'] = $projects;
@@ -80,25 +106,26 @@ class ApiController extends Controller
             $data['client_message_count'] = $message;
         }
 
-        $project = Application::join('projects','projects.id','applications.project_id')
-                               ->leftJoin('categories','categories.id','projects.category_id')
-                                ->select(
-                                    'projects.*',
-                                    'projects.status as project_status',
-                                    'applications.status as application_status',
-                                    'categories.name as category',
-                                    DB::raw('(SELECT COUNT(*) FROM applications WHERE applications.project_id = projects.id) as application')
-                                    )
-                                ->when(auth()->user()->role == 'Client', function($q){
-                                            $q->where('projects.user_id',authId());
-                                        })
-                                ->when(auth()->user()->role == 'Freelancer', function($q){
-                                    $q->where('applications.user_id',authId());
-                                })
-                                ->where('applications.status','!=','Cancelled')
-                                ->orderByDESC('projects.id')
-                                ->take(5)
-                                ->get();
+        $project = Application::join('projects', 'projects.id', 'applications.project_id')
+            ->leftJoin('categories', 'categories.id', 'projects.category_id')
+            ->select(
+                'projects.*',
+                'projects.status as project_status',
+                'applications.status as application_status',
+                'categories.name as category',
+                DB::raw('(SELECT COUNT(*) FROM applications WHERE applications.project_id = projects.id) as application')
+            )
+            ->when(auth()->user()->role == 'Client', function ($q) {
+                $q->where('projects.user_id', authId());
+            })
+            ->when(auth()->user()->role == 'Freelancer', function ($q) {
+                $q->where('applications.user_id', authId());
+            })
+            ->where('applications.status', '!=', 'Cancelled')
+            ->orderByDESC('projects.id')
+            ->take(5)
+            ->get();
+
         $prjects = [];
         foreach ($project as $item) {
             $array['id'] = $item->id;
@@ -114,77 +141,80 @@ class ApiController extends Controller
             $array['application'] = $item->application ?? 0;
             $prjects[] = $array;
         }
+
         $notificaiton = Notification::where('user_id', authId())->orderByDESC('id')->get();
         return response()->json(['status' => true, 'message' => 'Success', 'data' => $data, 'projects' => $prjects, 'notification' => $notificaiton]);
     }
 
     public function category()
     {
-      $category = DB::table('categories')
-                        ->when(request()->type, function($q){
-                            $q->join('projects', 'projects.category_id', '=', 'categories.id');
-                        })
-                        ->groupBy('categories.id')
-                        ->orderBy('categories.name','asc')
-                        ->where('categories.status', 'Active')
-                        ->select('categories.id', 'categories.name', 'categories.slug')
-                        ->get();
-      $data = [];
-      if($category){
-        foreach($category as $item){
-            $data[] = [
-                'id' => $item->id,
-                'name' => $item->name,
-                'slug' => $item->slug,
-            ];
+        $category = DB::table('categories')
+            ->when(request()->type, function ($q) {
+                $q->join('projects', 'projects.category_id', '=', 'categories.id');
+            })
+            ->groupBy('categories.id')
+            ->orderBy('categories.name', 'asc')
+            ->where('categories.status', 'Active')
+            ->select('categories.id', 'categories.name', 'categories.slug')
+            ->get();
+
+        $data = [];
+        if ($category) {
+            foreach ($category as $item) {
+                $data[] = [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'slug' => $item->slug,
+                ];
+            }
         }
-      }
-      return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
+
+        return response()->json(['status' => true, 'message' => 'Success!', 'data' => $data]);
     }
 
     public function technology()
     {
-      $category = DB::table('technologies')->where('status', 'Active')->orderBy('name','asc')->get();
-      $data = [];
-      if($category){
-        foreach($category as $item){
-            $data[] = [
-                'id' => $item->id,
-                'name' => $item->name,
-            ];
+        $category = DB::table('technologies')->where('status', 'Active')->orderBy('name', 'asc')->get();
+        $data = [];
+        if ($category) {
+            foreach ($category as $item) {
+                $data[] = [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                ];
+            }
         }
-      }
-      return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
+        return response()->json(['status' => true, 'message' => 'Success!', 'data' => $data]);
     }
 
     public function langs()
     {
-      $langs = DB::table('langs')->where('status', 'Active')->orderBy('name','asc')->get();
-      $data = [];
-      if($langs){
-        foreach($langs as $item){
-            $data[] = [
-                'id' => $item->id,
-                'name' => $item->name,
-            ];
+        $langs = DB::table('langs')->where('status', 'Active')->orderBy('name', 'asc')->get();
+        $data = [];
+        if ($langs) {
+            foreach ($langs as $item) {
+                $data[] = [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                ];
+            }
         }
-      }
-      return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
+        return response()->json(['status' => true, 'message' => 'Success!', 'data' => $data]);
     }
 
     public function programmingLanguage()
     {
-      $programming_languages = DB::table('programming_languages')->where('status', 'Active')->get();
-      $data = [];
-      if($programming_languages){
-        foreach($programming_languages as $item){
-            $data[] = [
-                'id' => $item->id,
-                'name' => $item->name,
-            ];
+        $programming_languages = DB::table('programming_languages')->where('status', 'Active')->get();
+        $data = [];
+        if ($programming_languages) {
+            foreach ($programming_languages as $item) {
+                $data[] = [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                ];
+            }
         }
-      }
-      return response()->json(['status'=>true, 'message'=>'Success!', 'data' => $data]);
+        return response()->json(['status' => true, 'message' => 'Success!', 'data' => $data]);
     }
 
     // ✅ FIXED: filter now returns id + route_id + applied (and keeps old behavior)
@@ -288,9 +318,9 @@ class ApiController extends Controller
         ]);
     }
 
-
-    public function projectDetail($slug){
-        $project = Project::where('slug',$slug)->first();
+    public function projectDetail($slug)
+    {
+        $project = Project::where('slug', $slug)->first();
         $data['id'] = $project->id;
         $data['category_id'] = $project->category_id;
         $data['title'] = $project->title;
@@ -304,45 +334,48 @@ class ApiController extends Controller
         return response()->json(['status' => true, 'message' => 'Projects fetched successfully!', 'data' => $data]);
     }
 
-    public function updateProfile(){
-      try{
-        $validator = Validator::make(request()->all(), [
-          'name' => 'required',
-          'shop_name' => 'required',
-        ]);
-        if ($validator->fails()) {
-          return response()->json(array('status'=>'Validator Failed', 'errors' => $validator->getMessageBag()->toArray()));
-        }
-        $rule['name'] = 'required';
-        $rule['phone'] = 'required|digits:10|unique:users,email,' . authId();
-        $user = User::find(authId());
-        $user->first_name = request()->name;
-        $user->shop_name = request()->shop_name;
-        if (request()->image) {
-            $user->image = fileSave(request()->image, 'upload/images/profile', $user->image);
-        }
-        $user->save();
-        UserAddress::updateOrCreate(
-            [
-                'user_id' => authId()
-            ],[
-            'user_id' => authId(),
-            'shop_name' => request()->shop_name,
-            'name' => request()->name,
-            'email' => request()->email,
-            'phone' => request()->phone,
-            'pincode' => request()->pincode,
-            'address1' => request()->house,
-            'address2' => request()->area,
-            'landmark' => request()->landmark,
-            'country' => request()->country,
-            'city' => request()->city,
-            'district' => request()->district,
-            'state' => request()->state,
-         ]);
-        DB::commit();
-        return response()->json(['status' => true, 'message' => 'Profile updated successfully']);
-        }catch(\Exception $e){
+    public function updateProfile()
+    {
+        try {
+            $validator = Validator::make(request()->all(), [
+                'name' => 'required',
+                'shop_name' => 'required',
+            ]);
+            if ($validator->fails()) {
+                return response()->json(array('status' => 'Validator Failed', 'errors' => $validator->getMessageBag()->toArray()));
+            }
+            $rule['name'] = 'required';
+            $rule['phone'] = 'required|digits:10|unique:users,email,' . authId();
+            $user = User::find(authId());
+            $user->first_name = request()->name;
+            $user->shop_name = request()->shop_name;
+            if (request()->image) {
+                $user->image = fileSave(request()->image, 'upload/images/profile', $user->image);
+            }
+            $user->save();
+            UserAddress::updateOrCreate(
+                [
+                    'user_id' => authId()
+                ],
+                [
+                    'user_id' => authId(),
+                    'shop_name' => request()->shop_name,
+                    'name' => request()->name,
+                    'email' => request()->email,
+                    'phone' => request()->phone,
+                    'pincode' => request()->pincode,
+                    'address1' => request()->house,
+                    'address2' => request()->area,
+                    'landmark' => request()->landmark,
+                    'country' => request()->country,
+                    'city' => request()->city,
+                    'district' => request()->district,
+                    'state' => request()->state,
+                ]
+            );
+            DB::commit();
+            return response()->json(['status' => true, 'message' => 'Profile updated successfully']);
+        } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['status' => false, 'message' => showError($e)]);
         }
@@ -362,14 +395,23 @@ class ApiController extends Controller
             ]);
 
             // ✅ Accept both possible field names
-            $appId = $request->input('applicationId') ?? $request->input('application_id');
+            $rawAppId = $request->input('applicationId') ?? $request->input('application_id');
 
             // ✅ Validate required fields early
-            if (!$appId || $appId === 'undefined' || $appId === 'null') {
+            if ($rawAppId === null || $rawAppId === '' || $rawAppId === 'undefined' || $rawAppId === 'null') {
                 \Log::error('Missing application id for payment', ['all' => $request->all()]);
                 return response()->json([
                     'status'  => false,
                     'message' => 'Missing application id (applicationId/application_id).'
+                ], 422);
+            }
+
+            $appId = (int) $rawAppId;
+            if ($appId <= 0) {
+                \Log::error('Invalid application id for payment (must be > 0)', ['appId' => $rawAppId, 'all' => $request->all()]);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Invalid application id.'
                 ], 422);
             }
 
@@ -381,10 +423,15 @@ class ApiController extends Controller
                 ], 422);
             }
 
-            // ✅ Load application (fail fast if invalid)
-            $apps = Application::find($appId);
+            /**
+             * ✅ KEY FIX:
+             * - New applications have applications.id = 0 (not auto increment)
+             * - Real PK is applications.my_row_id (auto increment, but INVISIBLE)
+             * - Therefore: lookup by my_row_id first, then id for backward compatibility
+             */
+            $apps = $this->findApplicationByAnyId($appId);
             if (!$apps) {
-                \Log::error('Invalid application id for payment', ['appId' => $appId]);
+                \Log::error('Invalid application id for payment (not found by my_row_id or id)', ['appId' => $appId]);
                 return response()->json([
                     'status'  => false,
                     'message' => 'Invalid application id.'
@@ -392,8 +439,13 @@ class ApiController extends Controller
             }
 
             // ✅ Validate required DB fields
-            if (empty($apps->project_id) || (int)$apps->project_id === 0) {
-                \Log::error('Application missing project_id', ['application_id' => $apps->id, 'project_id' => $apps->project_id]);
+            if (empty($apps->project_id) || (int) $apps->project_id === 0) {
+                \Log::error('Application missing project_id', [
+                    'application_lookup_id' => $appId,
+                    'application_my_row_id' => $apps->my_row_id ?? null,
+                    'application_id'        => $apps->id ?? null,
+                    'project_id'            => $apps->project_id
+                ]);
                 return response()->json([
                     'status'  => false,
                     'message' => 'Application is missing project_id.'
@@ -405,9 +457,11 @@ class ApiController extends Controller
 
             if ($amountCents <= 0) {
                 \Log::error('Invalid amount calculated for payment', [
-                    'application_id' => $apps->id,
-                    'total_amount'   => $apps->total_amount,
-                    'amount_cents'   => $amountCents,
+                    'application_lookup_id' => $appId,
+                    'application_my_row_id' => $apps->my_row_id ?? null,
+                    'application_id'        => $apps->id ?? null,
+                    'total_amount'          => $apps->total_amount,
+                    'amount_cents'          => $amountCents,
                 ]);
                 return response()->json([
                     'status'  => false,
@@ -416,11 +470,38 @@ class ApiController extends Controller
             }
 
             \Log::info('Creating Stripe payment', [
-                'application_id' => $apps->id,
-                'project_id'     => $apps->project_id,
-                'total_amount'   => $apps->total_amount,
-                'amount_cents'   => $amountCents,
+                'application_lookup_id' => $appId,
+                'application_my_row_id' => $apps->my_row_id ?? null,
+                'application_id'        => $apps->id ?? null,
+                'project_id'            => $apps->project_id,
+                'total_amount'          => $apps->total_amount,
+                'amount_cents'          => $amountCents,
             ]);
+
+            /**
+             * IMPORTANT:
+             * We store my_row_id as the "application_id" in Stripe metadata (and in payments table),
+             * because that is the only stable unique identifier for new applications.
+             */
+            $stableAppId = (int) ($apps->my_row_id ?? 0);
+            if ($stableAppId <= 0) {
+                // Fallback to old id only if my_row_id wasn't selected for some reason
+                $stableAppId = (int) ($apps->id ?? 0);
+            }
+
+            if ($stableAppId <= 0) {
+                \Log::error('Application has no usable identifier (my_row_id and id are empty)', [
+                    'application_lookup_id' => $appId,
+                    'apps' => [
+                        'my_row_id' => $apps->my_row_id ?? null,
+                        'id'        => $apps->id ?? null,
+                    ],
+                ]);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Application identifier is invalid.'
+                ], 422);
+            }
 
             $paymentIntent = PaymentIntent::create([
                 'amount' => $amountCents,
@@ -430,9 +511,12 @@ class ApiController extends Controller
 
                 // ✅ REQUIRED for webhook finalization
                 'metadata' => [
-                    'application_id' => (string) $apps->id,
-                    'project_id'     => (string) $apps->project_id,
-                    'user_id'        => (string) auth()->id(),
+                    // Store stable id (my_row_id) here
+                    'application_id'      => (string) $stableAppId,
+                    'application_my_row_id' => (string) ($apps->my_row_id ?? ''),
+                    'application_legacy_id' => (string) ($apps->id ?? ''),
+                    'project_id'          => (string) $apps->project_id,
+                    'user_id'             => (string) auth()->id(),
                 ],
 
                 'automatic_payment_methods' => [
@@ -476,7 +560,6 @@ class ApiController extends Controller
         }
     }
 
-
     public function payment_old(Request $request)
     {
         Stripe::setApiKey(config('services.stripe.secret'));
@@ -509,30 +592,56 @@ class ApiController extends Controller
     public function payments()
     {
         $payments = Payment::where('user_id', authId())
-                        ->orderByDESC('id')
-                        ->paginate(10);
+            ->orderByDESC('id')
+            ->paginate(10);
+
         $data = [];
         $page = page($payments);
+
         if ($payments) {
             foreach ($payments as $item) {
                 $item->created_at = timeFormat($item->created_at);
-                $application = Application::find($item->application_id);
+
+                /**
+                 * ✅ KEY FIX:
+                 * payments.application_id may now store applications.my_row_id (stable) for new records
+                 * and may store applications.id for old records.
+                 */
+                $application = $this->findApplicationByAnyId($item->application_id);
+
+                // Avoid broken Eloquent relations (primary key changed); resolve names directly.
+                $freelancerName = null;
+                $clientName = null;
+                $projectTitle = null;
+
+                if ($application) {
+                    $freelancer = User::find($application->user_id);
+                    $project = Project::find($application->project_id);
+                    $client = $project ? User::find($project->user_id) : null;
+
+                    $freelancerName = $freelancer->first_name ?? null;
+                    $clientName = $client->first_name ?? null;
+                    $projectTitle = $project->title ?? null;
+                }
+
                 $data[] = [
                     'id' => $item->id,
-                    'amount' => '$'.$item->amount,
+                    'amount' => '$' . $item->amount,
                     'paymentStatus' => $item->paymentStatus,
-                    'username' => authUser()->role == 'Client' ? ($application->user->first_name ?? null) : ($application->project->user->first_name ?? null),
-                    'project' => $application->project->title ?? null,
+                    'username' => authUser()->role == 'Client' ? $freelancerName : $clientName,
+                    'project' => $projectTitle,
                     'paymentIntentId' => $item->paymentIntentId ?? null,
                     'stripe_transfer_id' => $item->stripe_transfer_id ?? null,
                     'created_at' => timeFormat($item->created_at)
                 ];
             }
         }
+
         return response()->json(['status' => true, 'message' => 'Payments fetched successfully!', 'page' => $page, 'data' => $data]);
     }
 
-    public function walletBalance(){
+    public function walletBalance()
+    {
         $balance = Payment::whereUserId(authId())->sum('amount');
         return response()->json(['status' => true, 'message' => 'Success', 'balance' => $balance]);
     }
@@ -569,23 +678,23 @@ class ApiController extends Controller
 
     public function sendContactQuery(Request $request)
     {
-        try{
-        $rule['name'] = 'required';
-        $rule['phone'] = 'required';
-        $rule['email'] = 'required';
-        $rule['message'] = 'required';
-        $query = new ContactQuery();
-        $query->user_id = authId();
-        $query->name = request()->name;
-        $query->email = request()->email;
-        $query->phone = request()->phone;
-        $query->message = request()->message;
-        $query->save();
-        DB::commit();
-        return response()->json(['status'=>true, 'message'=>'Query sent successfully.']);
-      }catch(\Exception $e){
-        DB::rollback();
-        return response()->json(['status' => false, 'message' => $e->getMessage()]);
-      }
+        try {
+            $rule['name'] = 'required';
+            $rule['phone'] = 'required';
+            $rule['email'] = 'required';
+            $rule['message'] = 'required';
+            $query = new ContactQuery();
+            $query->user_id = authId();
+            $query->name = request()->name;
+            $query->email = request()->email;
+            $query->phone = request()->phone;
+            $query->message = request()->message;
+            $query->save();
+            DB::commit();
+            return response()->json(['status' => true, 'message' => 'Query sent successfully.']);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json(['status' => false, 'message' => $e->getMessage()]);
+        }
     }
 }
