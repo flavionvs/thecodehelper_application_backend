@@ -49,6 +49,20 @@ class ApiProjectController extends Controller
         return array_values(array_unique($ids));
     }
 
+    /**
+     * ✅ Application primary key helper (new schema)
+     * - prefers my_row_id (real PK)
+     * - falls back to id for legacy
+     */
+    private function applicationPk($app)
+    {
+        $pk = (int) ($app->my_row_id ?? 0);
+        if ($pk > 0) return $pk;
+
+        $legacy = (int) ($app->id ?? 0);
+        return $legacy > 0 ? $legacy : 0;
+    }
+
     public function projects(Request $request, $id = null)
     {
         $businessId = null;
@@ -142,18 +156,21 @@ class ApiProjectController extends Controller
                 continue;
             }
 
+            // ✅ Use real PK for all status/attachments tables
+            $applicationPk = $application ? $this->applicationPk($application) : 0;
+
             $app_status = DB::table('application_statuses')
-                ->where('application_id', $application->id ?? null)
+                ->where('application_id', $applicationPk ?: null)
                 ->where('status', 'Completed')
                 ->first();
 
             $cancelled_status = DB::table('application_statuses')
-                ->where('application_id', $application->id ?? null)
+                ->where('application_id', $applicationPk ?: null)
                 ->where('status', 'Cancelled')
                 ->first();
 
             $completion_request = DB::table('application_statuses')
-                ->where('application_id', $application->id ?? null)
+                ->where('application_id', $applicationPk ?: null)
                 ->where('status', 'Completion Requested')
                 ->first();
 
@@ -163,7 +180,7 @@ class ApiProjectController extends Controller
                 ->first();
 
             $completion_attachment = DB::table('application_completion_attachments')
-                ->where('application_id', $application->id ?? null)
+                ->where('application_id', $applicationPk ?: null)
                 ->get();
 
             $att = [];
@@ -257,7 +274,7 @@ class ApiProjectController extends Controller
             ->where('applications.status', 'Approved')
             ->groupBy('projects.id')
             ->orderByDesc('applications.created_at')
-            ->select('projects.*', DB::raw('(SELECT COUNT(id) FROM applications WHERE project_id = projects.id OR project_id = projects.my_row_id) as application_count'))
+            ->select('projects.*', DB::raw('(SELECT COUNT(my_row_id) FROM applications WHERE project_id = projects.id OR project_id = projects.my_row_id) as application_count'))
             ->paginate(10);
 
         $data = [];
@@ -494,9 +511,7 @@ class ApiProjectController extends Controller
             $stripe_fee = 0.3;
             $total_amount = $amount + $admin_amount + $stripe_amount + $stripe_fee;
 
-            // ✅ IMPORTANT:
-            // Store project_id consistently. To be compatible with your existing DB,
-            // prefer my_row_id if it exists, else use id.
+            // ✅ Store project_id consistently
             $storeProjectId = $routeProjectId ?: $businessProjectId;
 
             $application = Application::create([
@@ -519,10 +534,13 @@ class ApiProjectController extends Controller
                 'status' => 'Pending',
             ]);
 
+            // ✅ IMPORTANT: new PK for attachments/status tables
+            $applicationPk = $this->applicationPk($application);
+
             if (request()->attachments) {
                 foreach (request()->attachments as $attachment) {
                     ApplicationAttachment::create([
-                        'application_id' => $application->id,
+                        'application_id' => $applicationPk,
                         'attachment' => fileSave($attachment, 'upload/application'),
                     ]);
                 }
@@ -576,23 +594,33 @@ class ApiProjectController extends Controller
 
         $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
 
-        // ✅ FIX: use join that supports both id mappings, don't rely on whereHas('project')
+        // ✅ FIX: include my_row_id in select and return it to frontend
         $applications = Application::join('projects', function ($join) {
                 $join->on('projects.id', '=', 'applications.project_id')
                     ->orOn('projects.my_row_id', '=', 'applications.project_id');
             })
             ->where('projects.user_id', authId())
             ->whereIn('applications.project_id', $candidateProjectIds)
-            ->select('applications.*')
-            ->orderByDesc('applications.id')
+            ->select('applications.*', 'applications.my_row_id as my_row_id')
+            ->orderByDesc('applications.my_row_id')
             ->paginate(10);
 
         $data = [];
         $page = page($applications);
 
         foreach ($applications as $item) {
+            $appPk = $this->applicationPk($item);
+
             $data[] = [
+                // ✅ legacy field kept, but DO NOT use it for payments anymore
                 'id' => $item->id,
+
+                // ✅ this is what frontend must use
+                'my_row_id' => $item->my_row_id,
+
+                // ✅ optional: helpful for debugging
+                'application_pk' => $appPk,
+
                 'user_id' => $item->user_id,
                 'username' => $item->user->first_name ?? null,
                 'status' => $item->status,
@@ -644,14 +672,19 @@ class ApiProjectController extends Controller
         DB::beginTransaction();
 
         try {
-            // ✅ FIX: join projects in a way that supports both id mappings
+            $reqAppId = (int) request()->applicationId;
+
+            // ✅ Accept BOTH schemas, but prefer my_row_id
             $applied = Application::join('projects', function ($join) {
                     $join->on('projects.id', '=', 'applications.project_id')
                         ->orOn('projects.my_row_id', '=', 'applications.project_id');
                 })
                 ->where('projects.user_id', authId())
-                ->where('applications.id', request()->applicationId)
-                ->select('applications.*')
+                ->where(function ($q) use ($reqAppId) {
+                    $q->where('applications.my_row_id', $reqAppId)
+                      ->orWhere('applications.id', $reqAppId);
+                })
+                ->select('applications.*', 'applications.my_row_id as my_row_id')
                 ->first();
 
             if (!$applied) {
@@ -664,9 +697,12 @@ class ApiProjectController extends Controller
             $applied->status = 'Approved';
             $applied->save();
 
+            $appPk = $this->applicationPk($applied);
+
             Payment::create([
                 'user_id' => authId(),
-                'application_id' => request()->applicationId,
+                // ✅ store PK (my_row_id)
+                'application_id' => $appPk,
                 'amount' => (float) request()->amount / 100,
                 'paymentDetails' => json_encode(request()->paymentDetails, true),
                 'paymentIntentId' => request()->paymentIntentId,
@@ -679,7 +715,6 @@ class ApiProjectController extends Controller
                 'message' => 'Your application has been approved',
             ]);
 
-            // ✅ Safer customer notification: resolve project owner via join
             $proj = Project::where('id', $applied->project_id)
                 ->orWhere('my_row_id', $applied->project_id)
                 ->first();
@@ -747,15 +782,17 @@ class ApiProjectController extends Controller
             $application->remark = request()->remark;
             $application->save();
 
+            $appPk = $this->applicationPk($application);
+
             ApplicationStatus::updateOrCreate([
-                'application_id' => $application->id,
+                'application_id' => $appPk,
                 'status' => 'Completion Requested',
             ]);
 
             if (request()->attachments) {
                 foreach (request()->attachments as $attachment) {
                     ApplicationCompletionAttachment::create([
-                        'application_id' => $application->id,
+                        'application_id' => $appPk,
                         'attachment' => fileSave($attachment, 'upload/application'),
                     ]);
                 }
@@ -791,7 +828,6 @@ class ApiProjectController extends Controller
         DB::beginTransaction();
 
         try {
-            // ✅ FIX join
             $application = Application::join('projects', function ($join) {
                     $join->on('projects.id', '=', 'applications.project_id')
                         ->orOn('projects.my_row_id', '=', 'applications.project_id');
@@ -799,7 +835,7 @@ class ApiProjectController extends Controller
                 ->whereIn('applications.project_id', $candidateProjectIds)
                 ->where('projects.user_id', authId())
                 ->where('applications.status', 'Completion Requested')
-                ->select('applications.*')
+                ->select('applications.*', 'applications.my_row_id as my_row_id')
                 ->first();
 
             if (!$application) {
@@ -810,8 +846,10 @@ class ApiProjectController extends Controller
             $application->remark = request()->remark;
             $application->save();
 
+            $appPk = $this->applicationPk($application);
+
             ApplicationStatus::updateOrCreate([
-                'application_id' => $application->id,
+                'application_id' => $appPk,
                 'status' => 'Completed',
             ]);
 
@@ -823,7 +861,7 @@ class ApiProjectController extends Controller
             }
 
             Payment::create([
-                'application_id' => $application->id,
+                'application_id' => $appPk,
                 'user_id' => $application->user_id,
                 'amount' => $application->amount,
                 'paymentStatus' => 'succeeded',
@@ -831,7 +869,7 @@ class ApiProjectController extends Controller
             ]);
 
             Payment::create([
-                'application_id' => $application->id,
+                'application_id' => $appPk,
                 'user_id' => authId(),
                 'amount' => -$application->amount,
                 'paymentStatus' => 'succeeded',
@@ -862,7 +900,12 @@ class ApiProjectController extends Controller
         DB::beginTransaction();
 
         try {
-            $application = Application::where('id', $application_id)->first();
+            $reqId = (int) $application_id;
+
+            // ✅ accept both (prefer my_row_id)
+            $application = Application::where('my_row_id', $reqId)
+                ->orWhere('id', $reqId)
+                ->first();
 
             if (!$application) {
                 return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
@@ -872,8 +915,10 @@ class ApiProjectController extends Controller
             $application->cancel_reason = request()->cancel_reason;
             $application->save();
 
+            $appPk = $this->applicationPk($application);
+
             ApplicationStatus::updateOrCreate([
-                'application_id' => $application->id,
+                'application_id' => $appPk,
                 'status' => 'Cancelled',
             ]);
 
@@ -885,7 +930,7 @@ class ApiProjectController extends Controller
             }
 
             Payment::create([
-                'application_id' => $application->id,
+                'application_id' => $appPk,
                 'user_id' => authId(),
                 'amount' => -1 * ($application->total_amount * 90 / 100),
                 'paymentStatus' => 'succeeded',
@@ -898,7 +943,6 @@ class ApiProjectController extends Controller
                 'message' => 'Project completion has been cancelled.',
             ]);
 
-            // ✅ safe customer notification
             $proj = Project::where('id', $application->project_id)
                 ->orWhere('my_row_id', $application->project_id)
                 ->first();
