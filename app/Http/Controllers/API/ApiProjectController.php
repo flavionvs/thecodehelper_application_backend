@@ -193,7 +193,6 @@ class ApiProjectController extends Controller
             $array['route_id'] = $item->my_row_id;
             $array['applied'] = Application::whereIn('project_id', $candidateProjectIds)->where('user_id', authId())->exists();
             $array['category_id'] = $item->category_id;
-            $array['approved_freelancer_id'] = $item->approved_freelancer_id ?? null;
             $array['title'] = $item->title;
             $array['slug'] = $item->slug;
             $array['description'] = $item->description;
