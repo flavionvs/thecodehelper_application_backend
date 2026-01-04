@@ -33,8 +33,11 @@ class Application extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
+    /**
+     * application_attachments.application_id stores the STABLE application PK (applications.my_row_id)
+     */
     public function attachments()
     {
-        return $this->hasMany(ApplicationAttachment::class);
+        return $this->hasMany(ApplicationAttachment::class, 'application_id', 'my_row_id');
     }
 }
