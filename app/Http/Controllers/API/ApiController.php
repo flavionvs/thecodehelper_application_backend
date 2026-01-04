@@ -510,14 +510,14 @@ class ApiController extends Controller
                 'payment_method' => $paymentMethod,
                 'confirm' => true,
 
-                // ✅ REQUIRED for webhook finalization
+                // ✅ REQUIRED for webhook finalization (even if you finalize in payment(), keep metadata)
                 'metadata' => [
                     // Store stable id (my_row_id) here
-                    'application_id'      => (string) $stableAppId,
+                    'application_id'        => (string) $stableAppId,
                     'application_my_row_id' => (string) ($apps->my_row_id ?? ''),
                     'application_legacy_id' => (string) ($apps->id ?? ''),
-                    'project_id'          => (string) $apps->project_id,
-                    'user_id'             => (string) auth()->id(),
+                    'project_id'            => (string) $apps->project_id,
+                    'user_id'               => (string) auth()->id(),
                 ],
 
                 'automatic_payment_methods' => [
@@ -526,8 +526,87 @@ class ApiController extends Controller
                 ],
             ]);
 
-            // ✅ Return states cleanly
+            // ✅ If succeeded right away, finalize DB HERE (no webhook dependency)
             if ($paymentIntent->status === 'succeeded') {
+                $intentId = $paymentIntent->id ?? null;
+                $amountUsd = number_format(((int)$amountCents / 100), 2, '.', '');
+
+                try {
+                    DB::transaction(function () use ($apps, $stableAppId, $intentId, $paymentIntent, $amountUsd) {
+
+                        // Find project by id OR my_row_id (safe)
+                        $project = Project::query()
+                            ->where('id', (int)$apps->project_id)
+                            ->orWhere('my_row_id', (int)$apps->project_id)
+                            ->lockForUpdate()
+                            ->first();
+
+                        if (!$project) {
+                            \Log::warning('Payment succeeded but project not found for finalization', [
+                                'project_lookup_id' => $apps->project_id ?? null,
+                                'application_my_row_id' => $apps->my_row_id ?? null,
+                                'application_id' => $apps->id ?? null,
+                                'intent' => $intentId,
+                            ]);
+                            return;
+                        }
+
+                        // Idempotent payment create/update
+                        $existing = Payment::where('paymentIntentId', $intentId)->first();
+                        if (!$existing) {
+                            Payment::create([
+                                'user_id'         => $project->user_id ?? authId(), // payer (client)
+                                'application_id'  => (int)$stableAppId,             // stable application id
+                                'amount'          => $amountUsd,
+                                'paymentIntentId' => $intentId,
+                                'paymentStatus'   => $paymentIntent->status ?? 'succeeded',
+                                'paymentDetails'  => json_encode($paymentIntent),
+                                'stripe_transfer_id' => null,
+                            ]);
+                        } else {
+                            $existing->paymentStatus  = $paymentIntent->status ?? $existing->paymentStatus;
+                            $existing->paymentDetails = json_encode($paymentIntent);
+                            $existing->save();
+                        }
+
+                        // Update application status
+                        $appMyRowId = (int)($apps->my_row_id ?? 0);
+                        if ($appMyRowId > 0) {
+                            Application::where('my_row_id', $appMyRowId)->update([
+                                'status' => 'Approved',
+                            ]);
+                        }
+
+                        // Update project status/payment
+                        $project->payment_status = 'paid';
+                        $project->status = 'in_progress';
+                        $project->selected_application_id = (int)$stableAppId;
+                        $project->save();
+
+                        \Log::info('Payment finalized: project flipped to in_progress + paid', [
+                            'intent' => $intentId,
+                            'project_id' => $project->id ?? null,
+                            'project_my_row_id' => $project->my_row_id ?? null,
+                            'selected_application_id' => $project->selected_application_id ?? null,
+                        ]);
+                    });
+                } catch (\Throwable $e) {
+                    \Log::error('Payment succeeded but DB finalization failed', [
+                        'intent' => $intentId,
+                        'application_my_row_id' => $apps->my_row_id ?? null,
+                        'application_id' => $apps->id ?? null,
+                        'project_id' => $apps->project_id ?? null,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    // Still return success to frontend, but warn (optional)
+                    return response()->json([
+                        'status' => true,
+                        'message' => 'Payment succeeded, but finalization failed (check logs).',
+                        'paymentIntent' => $paymentIntent
+                    ]);
+                }
+
                 return response()->json([
                     'status' => true,
                     'message' => 'Payment succeeded!',
@@ -535,6 +614,7 @@ class ApiController extends Controller
                 ]);
             }
 
+            // ✅ Handle 3DS flows
             if ($paymentIntent->status === 'requires_action') {
                 return response()->json([
                     'requires_action' => true,
