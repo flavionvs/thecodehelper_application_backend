@@ -123,19 +123,17 @@ class StripeWebhookController extends Controller
                         return;
                     }
 
-                    // ✅ IMPORTANT FIX:
-                    // Even if payment row already exists, we STILL update project/application.
+                    // ✅ CRITICAL FIX:
+                    // Do NOT exit early if payment exists. Only prevent duplicate insert.
                     $payment = Payment::where('paymentIntentId', $intentId)->first();
 
                     if (!$payment) {
-                        // Choose safest payer id for DB constraints:
-                        // 1) metadata user_id (client payer)
-                        // 2) project owner
+                        // Use payer id safely: metadata user_id OR project owner
                         $payerId = $finalUserId ?: ($project->user_id ?? null);
 
                         Payment::create([
-                            'user_id'        => $payerId,          // do not use auth() in webhook
-                            'application_id' => $appIdInt,          // stable my_row_id
+                            'user_id'        => $payerId,                 // no auth() in webhook
+                            'application_id' => $appIdInt,                 // stable my_row_id
                             'amount'         => number_format((float)$amount, 2, '.', ''),
                             'paymentIntentId'=> $intentId,
                             'paymentStatus'  => $intent->status ?? 'succeeded',
@@ -143,8 +141,8 @@ class StripeWebhookController extends Controller
                             'stripe_transfer_id' => null,
                         ]);
                     } else {
-                        // Keep payment in sync (idempotent update)
-                        $payment->paymentStatus = $intent->status ?? $payment->paymentStatus;
+                        // Keep payment synced (idempotent update)
+                        $payment->paymentStatus  = $intent->status ?? $payment->paymentStatus;
                         $payment->paymentDetails = json_encode($intent);
                         $payment->save();
                     }
@@ -160,7 +158,7 @@ class StripeWebhookController extends Controller
                     $project->payment_status = 'paid';
                     $project->status = 'in_progress';
 
-                    // Store stable selected_application_id as my_row_id (consistent with your Jan 2026 design)
+                    // Store stable selected_application_id as my_row_id
                     $project->selected_application_id = $appIdInt;
 
                     $project->save();
@@ -172,7 +170,6 @@ class StripeWebhookController extends Controller
                         'project_my_row_id' => $project->my_row_id ?? null,
                     ]);
                 });
-
             } catch (\Throwable $e) {
                 Log::error('[StripeWebhook] Processing failed (non-fatal, returning 200)', [
                     'intent' => $intentId,
