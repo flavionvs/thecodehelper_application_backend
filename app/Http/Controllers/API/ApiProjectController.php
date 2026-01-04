@@ -526,7 +526,7 @@ class ApiProjectController extends Controller
                 'stripe_amount' => $stripe_amount,
                 'stripe_fee' => $stripe_fee,
                 'total_amount' => $total_amount,
-                'project_data' => $project,
+                'project_data' => json_encode($project),
                 'user_data' => User::where('id', authId())
                     ->select('users.first_name', 'users.email', 'users.first_name', 'users.phone')
                     ->first(),
@@ -600,8 +600,8 @@ class ApiProjectController extends Controller
             })
             ->where('projects.user_id', authId())
             ->whereIn('applications.project_id', $candidateProjectIds)
-            ->select('applications.*', 'applications.my_row_id as my_row_id')
-            ->orderByDesc('applications.my_row_id')
+            ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
+            ->orderByDesc('my_row_id')
             ->paginate(10);
 
         $data = [];

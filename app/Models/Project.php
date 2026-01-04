@@ -21,6 +21,11 @@ class Project extends Model
     protected $keyType = 'int';
 
     protected $guarded = [];
+
+    /**
+     * Keep this if your frontend/admin expects `approved_freelancer_id`
+     * as a computed attribute.
+     */
     protected $appends = ['approved_freelancer_id'];
 
     public function insertUpdate($request, $id = null)
@@ -47,12 +52,12 @@ class Project extends Model
 
         $data = Project::create($req);
 
-
         // ALWAYS bridge: keep legacy joins stable (applications.project_id -> projects.id)
         DB::table('projects')
-        ->where('my_row_id', $data->my_row_id)
-        ->update(['id' => $data->my_row_id]);
+            ->where('my_row_id', $data->my_row_id)
+            ->update(['id' => $data->my_row_id]);
 
+        // Ensure in-memory model also reflects the legacy business id
         $data->id = $data->my_row_id;
 
         return ['status' => true];
@@ -73,6 +78,11 @@ class Project extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /**
+     * IMPORTANT:
+     * Applications primary key is now `my_row_id` (see Application model fix).
+     * Also note: application.status values appear to be "Approved" with capital A.
+     */
     public function getApprovedFreelancerIdAttribute()
     {
         $application = Application::where('project_id', $this->id)
@@ -93,7 +103,8 @@ class Project extends Model
                 'projects.*',
                 'categories.name as category',
                 'users.first_name as client',
-                DB::raw('COUNT(applications.id) as application')
+                // applications.my_row_id is the real PK; using COUNT(applications.id) can return 0
+                DB::raw('COUNT(applications.my_row_id) as application')
             );
 
         if (request()->category) {
@@ -166,7 +177,17 @@ class Project extends Model
             ->editColumn('user_id', '{{$username}}')
             ->editColumn('project_id', '{{$project}}')
             ->editColumn('attachment', function ($data) {
-                $attachments = DB::table('application_attachments')->where('application_id', $data->id)->get();
+                /**
+                 * IMPORTANT:
+                 * application_attachments.application_id should reference applications.my_row_id.
+                 * Since the datatable query selects "applications.*", we have $data->my_row_id available.
+                 */
+                $applicationPk = $data->my_row_id ?? $data->id ?? null;
+
+                $attachments = $applicationPk
+                    ? DB::table('application_attachments')->where('application_id', $applicationPk)->get()
+                    : collect();
+
                 $links = '';
 
                 if ($attachments->count() > 0) {
