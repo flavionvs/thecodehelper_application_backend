@@ -791,16 +791,6 @@ class ApiController extends Controller
     {
         $dryRun = $request->boolean('dry_run', false);
         
-        // Debug: Check actual table structure
-        if ($request->boolean('debug_schema', false)) {
-            $projectColumns = DB::select("SHOW COLUMNS FROM projects");
-            $sampleProject = DB::table('projects')->select('*')->first();
-            return response()->json([
-                'columns' => $projectColumns,
-                'sample_project' => $sampleProject,
-            ]);
-        }
-        
         $results = [
             'dry_run' => $dryRun,
             'checked' => 0,
