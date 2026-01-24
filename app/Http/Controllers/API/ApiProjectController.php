@@ -203,6 +203,20 @@ class ApiProjectController extends Controller
             $array['status'] = ucfirst($item->status ?? 'pending');
             $array['application_status'] = $current_status->status ?? 'Pending';
 
+            // ✅ Chat user ID: For clients, show the approved freelancer. For freelancers, show the client.
+            if (authUser()->role == 'Client') {
+                // Get approved freelancer's user_id
+                $approvedApp = DB::table('applications')
+                    ->whereIn('project_id', $candidateProjectIds)
+                    ->where('status', 'Approved')
+                    ->orWhere('status', 'Completion Requested')
+                    ->first();
+                $array['chat_user_id'] = $approvedApp->user_id ?? null;
+            } else {
+                // Freelancer sees the project owner (client)
+                $array['chat_user_id'] = $item->user_id;
+            }
+
             $array['remark'] = $application->remark ?? null;
             $array['completion_attachment'] = $att;
 
