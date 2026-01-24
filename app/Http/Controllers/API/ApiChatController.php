@@ -50,14 +50,27 @@ class ApiChatController extends Controller
         $from = authId();
         $to = $request->to;        
         $message = $request->message;
-        $m = new Message;
-        $m->from = $from;
-        $m->to = $to;
-        $m->message = $message;
-        $m->file = fileSave($request->file, 'upload/chat');
-        $m->save();
-        $file = $m->file ? img($m->file) : null;
-        $data = ['id'=>$m->id, 'from'=>$from, 'to'=>$to, 'message' => $message, 'created_at'=>timeFormat($m->created_at),'file'=>$file];
+        $file = fileSave($request->file, 'upload/chat');
+        
+        // Use DB::table for insert to avoid INVISIBLE my_row_id issues with Eloquent save()
+        $insertId = DB::table('messages')->insertGetId([
+            'from' => $from,
+            'to' => $to,
+            'message' => $message,
+            'file' => $file,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        
+        $fileUrl = $file ? img($file) : null;
+        $data = [
+            'id' => $insertId,
+            'from' => $from,
+            'to' => $to,
+            'message' => $message,
+            'created_at' => timeFormat(now()),
+            'file' => $fileUrl
+        ];
 
         $output = '';
         if ($pusher->trigger('my-channel', 'my-event', $data)) {     
