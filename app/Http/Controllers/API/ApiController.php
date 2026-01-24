@@ -856,6 +856,52 @@ class ApiController extends Controller
             }
         }
 
+        // Diagnostic: List tables with my_row_id column (INVISIBLE primary key issue)
+        if ($request->boolean('diagnose_tables', false)) {
+            try {
+                $tables = DB::select("SHOW TABLES");
+                $dbName = DB::getDatabaseName();
+                $tablesWithMyRowId = [];
+                
+                foreach ($tables as $table) {
+                    $tableName = $table->{"Tables_in_{$dbName}"} ?? array_values((array)$table)[0];
+                    
+                    // Check for my_row_id column using SHOW COLUMNS with FULL to see INVISIBLE columns
+                    $columns = DB::select("SHOW FULL COLUMNS FROM `{$tableName}`");
+                    
+                    foreach ($columns as $column) {
+                        if ($column->Field === 'my_row_id') {
+                            // Check if it's the primary key
+                            $isPrimary = $column->Key === 'PRI';
+                            $isInvisible = strpos($column->Extra ?? '', 'INVISIBLE') !== false 
+                                || strpos($column->Extra ?? '', 'invisible') !== false;
+                            
+                            $tablesWithMyRowId[] = [
+                                'table' => $tableName,
+                                'is_primary' => $isPrimary,
+                                'is_invisible' => $isInvisible,
+                                'type' => $column->Type,
+                                'extra' => $column->Extra,
+                            ];
+                            break;
+                        }
+                    }
+                }
+                
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Found ' . count($tablesWithMyRowId) . ' tables with my_row_id column',
+                    'tables_with_my_row_id' => $tablesWithMyRowId,
+                    'fix_required' => 'Update Eloquent models to set protected $primaryKey = "my_row_id"',
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Diagnose error: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         $dryRun = $request->boolean('dry_run', false);
         
         $results = [
