@@ -173,6 +173,9 @@ class StripeWebhookController extends Controller
                             'user_id' => $application->user_id, // Freelancer
                             'title' => 'Application Approved! 🎉',
                             'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
+                            'type' => 'project',
+                            'link' => '/dashboard?tab=ongoing',
+                            'reference_id' => $project->my_row_id ?? $project->id,
                         ]);
 
                         // Notify the client that payment succeeded  
@@ -180,6 +183,9 @@ class StripeWebhookController extends Controller
                             'user_id' => $project->user_id, // Client
                             'title' => 'Payment Successful',
                             'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
+                            'type' => 'project',
+                            'link' => '/dashboard?tab=ongoing',
+                            'reference_id' => $project->my_row_id ?? $project->id,
                         ]);
                     } catch (\Throwable $notifyError) {
                         Log::error('[StripeWebhook] Notification failed', [

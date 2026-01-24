@@ -551,12 +551,18 @@ class ApiProjectController extends Controller
                     'user_id' => authId(),
                     'title' => 'New project application',
                     'message' => 'You have a new project application',
+                    'type' => 'application',
+                    'link' => '/dashboard?tab=applications',
+                    'reference_id' => $storeProjectId,
                 ]);
 
                 Notification::create([
                     'user_id' => $project->user_id,
                     'title' => 'You have a new project application.',
                     'message' => 'You have a new project application',
+                    'type' => 'application',
+                    'link' => '/dashboard?tab=ongoing',
+                    'reference_id' => $storeProjectId,
                 ]);
             } catch (\Throwable $e) {
                 \Log::error('Apply notification failed: ' . $e->getMessage(), [
@@ -820,12 +826,18 @@ class ApiProjectController extends Controller
                     'user_id' => $applied->user_id,
                     'title' => 'Application approved',
                     'message' => 'Your application has been approved',
+                    'type' => 'project',
+                    'link' => '/dashboard?tab=ongoing',
+                    'reference_id' => $proj->my_row_id ?? $proj->id,
                 ]);
 
                 Notification::create([
                     'user_id' => $proj->user_id,
                     'title' => 'Payment received',
                     'message' => 'Project moved to in progress.',
+                    'type' => 'project',
+                    'link' => '/dashboard?tab=ongoing',
+                    'reference_id' => $proj->my_row_id ?? $proj->id,
                 ]);
             } catch (\Throwable $e) {
                 \Log::error('[updateApplicationStatus] notification failed: ' . $e->getMessage());
@@ -894,11 +906,16 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
             }
 
-            $application->status = 'Completion Requested';
-            $application->remark = request()->remark;
-            $application->save();
-
             $appPk = $this->applicationPk($application);
+
+            // Use direct DB update to avoid INVISIBLE my_row_id column issues with Eloquent save()
+            DB::table('applications')
+                ->where('my_row_id', $appPk)
+                ->update([
+                    'status' => 'Completion Requested',
+                    'remark' => request()->remark,
+                    'updated_at' => now(),
+                ]);
 
             ApplicationStatus::updateOrCreate([
                 'application_id' => $appPk,
@@ -918,12 +935,18 @@ class ApiProjectController extends Controller
                 'user_id' => authId(),
                 'title' => 'Project completion request',
                 'message' => 'Project completion request sent successfully',
+                'type' => 'completion',
+                'link' => '/dashboard?tab=ongoing',
+                'reference_id' => $project->my_row_id ?? $project->id,
             ]);
 
             Notification::create([
                 'user_id' => $project->user_id,
                 'title' => 'Project completion request',
-                'message' => 'Project completion request sent successfully',
+                'message' => 'A freelancer has requested project completion',
+                'type' => 'completion',
+                'link' => '/dashboard?tab=ongoing',
+                'reference_id' => $project->my_row_id ?? $project->id,
             ]);
 
             DB::commit();
@@ -958,11 +981,16 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
             }
 
-            $application->status = 'Completed';
-            $application->remark = request()->remark;
-            $application->save();
-
             $appPk = $this->applicationPk($application);
+
+            // Use direct DB update to avoid INVISIBLE my_row_id column issues with Eloquent save()
+            DB::table('applications')
+                ->where('my_row_id', $appPk)
+                ->update([
+                    'status' => 'Completed',
+                    'remark' => request()->remark,
+                    'updated_at' => now(),
+                ]);
 
             ApplicationStatus::updateOrCreate([
                 'application_id' => $appPk,
@@ -995,12 +1023,18 @@ class ApiProjectController extends Controller
                 'user_id' => $application->user_id,
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
+                'type' => 'completed',
+                'link' => '/dashboard?tab=completed',
+                'reference_id' => $project->my_row_id ?? $project->id,
             ]);
 
             Notification::create([
                 'user_id' => $project->user_id,
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
+                'type' => 'completed',
+                'link' => '/dashboard?tab=completed',
+                'reference_id' => $project->my_row_id ?? $project->id,
             ]);
 
             DB::commit();
@@ -1057,6 +1091,9 @@ class ApiProjectController extends Controller
                 'user_id' => $application->user_id,
                 'title' => 'Project completion cancelled',
                 'message' => 'Project completion has been cancelled.',
+                'type' => 'cancelled',
+                'link' => '/dashboard?tab=ongoing',
+                'reference_id' => $application->project_id,
             ]);
 
             $proj = Project::where('id', $application->project_id)
@@ -1068,6 +1105,9 @@ class ApiProjectController extends Controller
                     'user_id' => $proj->user_id,
                     'title' => 'Project completion cancelled',
                     'message' => 'A project completion was cancelled.',
+                    'type' => 'cancelled',
+                    'link' => '/dashboard?tab=ongoing',
+                    'reference_id' => $proj->my_row_id ?? $proj->id,
                 ]);
             }
 
