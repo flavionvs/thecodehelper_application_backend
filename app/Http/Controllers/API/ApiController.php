@@ -939,6 +939,37 @@ class ApiController extends Controller
             }
         }
 
+        // Debug application count issue
+        if ($request->boolean('debug_app_count', false)) {
+            try {
+                $projectsData = DB::select("SELECT my_row_id, id, title FROM projects LIMIT 10");
+                $applicationsData = DB::select("SELECT my_row_id, id, project_id, status FROM applications LIMIT 20");
+                
+                $countsByProject = [];
+                foreach ($projectsData as $p) {
+                    $count = DB::select("SELECT COUNT(*) as cnt FROM applications WHERE project_id = ? OR project_id = ?", [$p->my_row_id, $p->id]);
+                    $countsByProject[] = [
+                        'project_my_row_id' => $p->my_row_id,
+                        'project_id' => $p->id,
+                        'title' => $p->title,
+                        'application_count' => $count[0]->cnt ?? 0,
+                    ];
+                }
+                
+                return response()->json([
+                    'status' => true,
+                    'projects' => $projectsData,
+                    'applications' => $applicationsData,
+                    'counts_by_project' => $countsByProject,
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Debug error: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         // Fix projects where application is Completed but project status is still in_progress
         if ($request->boolean('fix_completed_projects', false)) {
             try {
