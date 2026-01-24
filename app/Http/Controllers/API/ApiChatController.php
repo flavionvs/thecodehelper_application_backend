@@ -11,6 +11,15 @@ use Pusher\Pusher;
 
 class ApiChatController extends Controller
 {
+    public function testSendMessage(Request $request){
+        return response()->json([
+            'status' => true,
+            'message' => 'Test endpoint reached',
+            'auth_id' => authId(),
+            'request_data' => $request->all(),
+        ]);
+    }
+
     public function getMessage($user_id){        
         $messages = Message::where(function($q) use($user_id){
                         $q->where('from', $user_id)->where('to', authId());

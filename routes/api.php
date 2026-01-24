@@ -55,6 +55,7 @@ Route::group(['middleware' => ['api']], function($router) {
 
         Route::get('get-message/{user_id}', 'API\ApiChatController@getMessage');
         Route::post('send-message', 'API\ApiChatController@sendMessage');
+        Route::post('test-send-message', 'API\ApiChatController@testSendMessage');
         Route::post('update-count', 'API\ApiChatController@updateCount');
         Route::get('get-chat-users', 'API\ApiChatController@getChatUsers');
 
