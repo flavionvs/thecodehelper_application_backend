@@ -1158,7 +1158,20 @@ class ApiController extends Controller
             ], 401);
         }
 
-        $notifications = Notification::where('user_id', $user->id)
+        // Use DB::table to get raw results including my_row_id as id
+        $notifications = DB::table('notifications')
+            ->select([
+                'my_row_id as id',  // Return my_row_id as id for API consistency
+                'user_id',
+                'title',
+                'message',
+                'type',
+                'link',
+                'reference_id',
+                'created_at',
+                'updated_at'
+            ])
+            ->where('user_id', $user->id)
             ->orderBy('created_at', 'desc')
             ->take(50)
             ->get();
@@ -1183,18 +1196,18 @@ class ApiController extends Controller
             ], 401);
         }
 
-        $notification = Notification::where('id', $id)
+        // Use my_row_id as the primary key
+        $deleted = DB::table('notifications')
+            ->where('my_row_id', $id)
             ->where('user_id', $user->id)
-            ->first();
+            ->delete();
 
-        if (!$notification) {
+        if (!$deleted) {
             return response()->json([
                 'status' => false,
                 'message' => 'Notification not found'
             ], 404);
         }
-
-        $notification->delete();
 
         return response()->json([
             'status' => true,
