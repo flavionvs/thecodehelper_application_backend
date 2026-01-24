@@ -36,21 +36,15 @@ class ApiChatController extends Controller
 
     public function sendMessage(Request $request){
         try {
-            $options = array(
-                'cluster' => 'ap2',
-                'userTLS' => false
-            );
-
-            $pusher = new Pusher(
-                env('PUSHER_APP_KEY'),
-                env('PUSHER_APP_SECRET'),
-                env('PUSHER_APP_ID'),
-                $options
-            );  
             $from = authId();
             $to = $request->to;        
             $message = $request->message;
-            $file = fileSave($request->file, 'upload/chat');
+            
+            // Handle file upload if present
+            $file = null;
+            if ($request->hasFile('file')) {
+                $file = fileSave($request->file('file'), 'upload/chat');
+            }
             
             // Use DB::table for insert to avoid INVISIBLE my_row_id issues with Eloquent save()
             $insertId = DB::table('messages')->insertGetId([
@@ -74,9 +68,20 @@ class ApiChatController extends Controller
 
             // Try to trigger pusher but don't fail if it doesn't work
             try {
+                $options = array(
+                    'cluster' => 'ap2',
+                    'useTLS' => true
+                );
+                $pusher = new Pusher(
+                    env('PUSHER_APP_KEY'),
+                    env('PUSHER_APP_SECRET'),
+                    env('PUSHER_APP_ID'),
+                    $options
+                );
                 $pusher->trigger('my-channel', 'my-event', $data);
             } catch (\Exception $e) {
-                // Log pusher error but continue
+                // Log pusher error but continue - not critical
+                \Log::warning('Pusher failed: ' . $e->getMessage());
             }
             
             return response()->json([
@@ -85,9 +90,11 @@ class ApiChatController extends Controller
                 'data' => $data,
             ]);
         } catch (\Exception $e) {
+            \Log::error('sendMessage error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
             return response()->json([
                 'status' => false,
                 'message' => 'Error sending message: ' . $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
