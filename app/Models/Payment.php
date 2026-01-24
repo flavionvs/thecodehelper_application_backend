@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\DataTables;
 
@@ -23,6 +24,14 @@ class Payment extends Model
 
     protected static function booted()
     {
+        /**
+         * IMPORTANT: my_row_id is INVISIBLE in MySQL, so it won't appear in SELECT *
+         * We need to explicitly select it for relationships and operations to work.
+         */
+        static::addGlobalScope('select_my_row_id', function (Builder $builder) {
+            $builder->addSelect('payments.my_row_id');
+        });
+
         /**
          * Keep legacy/business id column in sync.
          * Some older parts of the app still read payments.id (not PK).

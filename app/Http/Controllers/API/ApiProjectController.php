@@ -101,7 +101,8 @@ class ApiProjectController extends Controller
 
         $appProjectIds = $project_ids->pluck('applications.project_id')->toArray();
 
-        $project = Project::when($businessId || $routeId, function ($q) use ($businessId, $routeId) {
+        $project = Project::select('projects.*', 'projects.my_row_id')
+            ->when($businessId || $routeId, function ($q) use ($businessId, $routeId) {
                 $q->where(function ($qq) use ($businessId, $routeId) {
                     if ($businessId) $qq->orWhere('projects.id', $businessId);
                     if ($routeId) $qq->orWhere('projects.my_row_id', $routeId);

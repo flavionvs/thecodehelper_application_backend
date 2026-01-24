@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Scopes\ActiveScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use yajra\Datatables\DataTables;
 use DB;
 
@@ -27,6 +28,19 @@ class Project extends Model
      * as a computed attribute.
      */
     protected $appends = ['approved_freelancer_id'];
+
+    /**
+     * Boot method to add global scope.
+     * IMPORTANT: my_row_id is INVISIBLE in MySQL, so it won't appear in SELECT *
+     * We need to explicitly select it for the relationship to work.
+     */
+    protected static function booted()
+    {
+        static::addGlobalScope('select_my_row_id', function (Builder $builder) {
+            // Always include my_row_id since it's INVISIBLE and won't be in SELECT *
+            $builder->addSelect('projects.my_row_id');
+        });
+    }
 
     public function insertUpdate($request, $id = null)
     {
