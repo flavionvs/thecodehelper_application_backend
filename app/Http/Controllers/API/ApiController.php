@@ -943,7 +943,9 @@ class ApiController extends Controller
         if ($request->boolean('fix_completed_projects', false)) {
             try {
                 // Find all applications with status "Completed" 
+                // Select my_row_id explicitly since it's INVISIBLE
                 $completedApps = DB::table('applications')
+                    ->select('*', 'my_row_id')
                     ->where('status', 'Completed')
                     ->get();
                 
@@ -951,8 +953,9 @@ class ApiController extends Controller
                 $alreadyOk = [];
                 
                 foreach ($completedApps as $app) {
-                    // Find the project
+                    // Find the project - select my_row_id explicitly since it's INVISIBLE
                     $project = DB::table('projects')
+                        ->select('*', 'my_row_id')
                         ->where('my_row_id', $app->project_id)
                         ->orWhere('id', $app->project_id)
                         ->first();
@@ -963,7 +966,7 @@ class ApiController extends Controller
                     
                     if ($project->status === 'completed') {
                         $alreadyOk[] = [
-                            'project_id' => $project->my_row_id ?? $project->id,
+                            'project_id' => $project->my_row_id,
                             'title' => $project->title,
                         ];
                         continue;
@@ -978,7 +981,7 @@ class ApiController extends Controller
                         ]);
                     
                     $fixed[] = [
-                        'project_id' => $project->my_row_id ?? $project->id,
+                        'project_id' => $project->my_row_id,
                         'title' => $project->title,
                         'old_status' => $project->status,
                         'new_status' => 'completed',
