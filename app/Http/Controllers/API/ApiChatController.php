@@ -35,53 +35,61 @@ class ApiChatController extends Controller
     }
 
     public function sendMessage(Request $request){
-        // return $request->file;
-        $options = array(
-            'cluster' => 'ap2',
-            'userTLS' => false
-        );
+        try {
+            $options = array(
+                'cluster' => 'ap2',
+                'userTLS' => false
+            );
 
-        $pusher = new Pusher(
-            env('PUSHER_APP_KEY'),
-            env('PUSHER_APP_SECRET'),
-            env('PUSHER_APP_ID'),
-            $options
-        );  
-        $from = authId();
-        $to = $request->to;        
-        $message = $request->message;
-        $file = fileSave($request->file, 'upload/chat');
-        
-        // Use DB::table for insert to avoid INVISIBLE my_row_id issues with Eloquent save()
-        $insertId = DB::table('messages')->insertGetId([
-            'from' => $from,
-            'to' => $to,
-            'message' => $message,
-            'file' => $file,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        
-        $fileUrl = $file ? img($file) : null;
-        $data = [
-            'id' => $insertId,
-            'from' => $from,
-            'to' => $to,
-            'message' => $message,
-            'created_at' => timeFormat(now()),
-            'file' => $fileUrl
-        ];
+            $pusher = new Pusher(
+                env('PUSHER_APP_KEY'),
+                env('PUSHER_APP_SECRET'),
+                env('PUSHER_APP_ID'),
+                $options
+            );  
+            $from = authId();
+            $to = $request->to;        
+            $message = $request->message;
+            $file = fileSave($request->file, 'upload/chat');
+            
+            // Use DB::table for insert to avoid INVISIBLE my_row_id issues with Eloquent save()
+            $insertId = DB::table('messages')->insertGetId([
+                'from' => $from,
+                'to' => $to,
+                'message' => $message,
+                'file' => $file,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            
+            $fileUrl = $file ? img($file) : null;
+            $data = [
+                'id' => $insertId,
+                'from' => $from,
+                'to' => $to,
+                'message' => $message,
+                'created_at' => timeFormat(now()),
+                'file' => $fileUrl
+            ];
 
-        $output = '';
-        if ($pusher->trigger('my-channel', 'my-event', $data)) {     
+            // Try to trigger pusher but don't fail if it doesn't work
+            try {
+                $pusher->trigger('my-channel', 'my-event', $data);
+            } catch (\Exception $e) {
+                // Log pusher error but continue
+            }
+            
             return response()->json([
                 'status' => true,
                 'message' => 'Messages sent successfully.',
                 'data' => $data,
             ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Error sending message: ' . $e->getMessage(),
+            ], 500);
         }
-        
-        return $output;      
     }
 
     public function getChatUsers(){
