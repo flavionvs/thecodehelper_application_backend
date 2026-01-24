@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Application;
+use App\Models\Notification;
 use App\Models\Payment;
 use App\Models\Project;
 use Illuminate\Http\Request;
@@ -164,6 +165,28 @@ class StripeWebhookController extends Controller
                     $project->selected_application_id = $appIdInt;
 
                     $project->save();
+
+                    // ✅ Send notifications to both parties
+                    try {
+                        // Notify the freelancer that their application was approved
+                        Notification::create([
+                            'user_id' => $application->user_id, // Freelancer
+                            'title' => 'Application Approved! 🎉',
+                            'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
+                        ]);
+
+                        // Notify the client that payment succeeded  
+                        Notification::create([
+                            'user_id' => $project->user_id, // Client
+                            'title' => 'Payment Successful',
+                            'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
+                        ]);
+                    } catch (\Throwable $notifyError) {
+                        Log::error('[StripeWebhook] Notification failed', [
+                            'error' => $notifyError->getMessage(),
+                            'project_id' => $project->id ?? null,
+                        ]);
+                    }
 
                     Log::info('[StripeWebhook] Updated project + application after succeeded intent', [
                         'intent' => $intentId,

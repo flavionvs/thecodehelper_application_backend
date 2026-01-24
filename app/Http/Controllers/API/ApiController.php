@@ -583,6 +583,28 @@ class ApiController extends Controller
                         $project->selected_application_id = (int)$stableAppId;
                         $project->save();
 
+                        // ✅ Send notifications to both parties
+                        try {
+                            // Notify the freelancer that their application was approved and payment received
+                            Notification::create([
+                                'user_id' => $apps->user_id, // Freelancer who applied
+                                'title' => 'Application Approved! 🎉',
+                                'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
+                            ]);
+
+                            // Notify the client that payment succeeded
+                            Notification::create([
+                                'user_id' => $project->user_id, // Client who posted the project
+                                'title' => 'Payment Successful',
+                                'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
+                            ]);
+                        } catch (\Throwable $notifyError) {
+                            \Log::error('Payment notification failed', [
+                                'error' => $notifyError->getMessage(),
+                                'project_id' => $project->id ?? null,
+                            ]);
+                        }
+
                         \Log::info('Payment finalized: project flipped to in_progress + paid', [
                             'intent' => $intentId,
                             'project_id' => $project->id ?? null,
