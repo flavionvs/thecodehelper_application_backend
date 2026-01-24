@@ -791,6 +791,16 @@ class ApiController extends Controller
     {
         $dryRun = $request->boolean('dry_run', false);
         
+        // Debug: Check actual table structure
+        if ($request->boolean('debug_schema', false)) {
+            $projectColumns = DB::select("SHOW COLUMNS FROM projects");
+            $sampleProject = DB::table('projects')->select('*')->first();
+            return response()->json([
+                'columns' => $projectColumns,
+                'sample_project' => $sampleProject,
+            ]);
+        }
+        
         $results = [
             'dry_run' => $dryRun,
             'checked' => 0,
@@ -833,14 +843,14 @@ class ApiController extends Controller
 
             $detail['application_id'] = $application->my_row_id ?? $application->id;
 
-            // Find project - explicitly select my_row_id since it may be INVISIBLE in MySQL
-            $project = DB::table('projects')
-                ->select('projects.*', 'projects.my_row_id')
-                ->where(function($q) use ($application) {
-                    $q->where('id', $application->project_id)
-                      ->orWhere('my_row_id', $application->project_id);
-                })
-                ->first();
+            // Find project - use raw SQL to ensure we get my_row_id even if it's INVISIBLE
+            $projectId = $application->project_id;
+            $project = DB::selectOne("
+                SELECT *, my_row_id 
+                FROM projects 
+                WHERE id = ? OR my_row_id = ?
+                LIMIT 1
+            ", [$projectId, $projectId]);
 
             if (!$project) {
                 $detail['status'] = 'error';
