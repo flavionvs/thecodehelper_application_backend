@@ -939,6 +939,35 @@ class ApiController extends Controller
             }
         }
 
+        // PERMANENT FIX: Sync id = my_row_id for ALL tables
+        if ($request->boolean('sync_all_ids', false)) {
+            try {
+                $tables = ['projects', 'applications', 'payments', 'notifications', 'messages'];
+                $results = [];
+                
+                foreach ($tables as $table) {
+                    try {
+                        // Update id = my_row_id where id is 0 or NULL
+                        $updated = DB::update("UPDATE `{$table}` SET id = my_row_id WHERE id = 0 OR id IS NULL");
+                        $results[$table] = ['fixed' => $updated, 'status' => 'ok'];
+                    } catch (\Exception $e) {
+                        $results[$table] = ['error' => $e->getMessage()];
+                    }
+                }
+                
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Synced id = my_row_id for all tables',
+                    'results' => $results,
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Sync error: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         // Debug application count issue
         if ($request->boolean('debug_app_count', false)) {
             try {

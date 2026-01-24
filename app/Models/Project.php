@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Scopes\ActiveScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Builder;
 use yajra\Datatables\DataTables;
 use DB;
 
@@ -30,14 +29,18 @@ class Project extends Model
     protected $appends = ['approved_freelancer_id'];
 
     /**
-     * Boot method to add global scope.
-     * IMPORTANT: my_row_id is INVISIBLE in MySQL, so it won't appear in SELECT *
-     * We select *, my_row_id to include both all columns AND the invisible primary key.
+     * Boot method - sync id with my_row_id on create.
      */
     protected static function booted()
     {
-        static::addGlobalScope('select_my_row_id', function (Builder $builder) {
-            $builder->selectRaw('projects.*, projects.my_row_id');
+        // After creating a project, sync id = my_row_id for backward compatibility
+        static::created(function ($model) {
+            if (empty($model->id) || (int)$model->id === 0) {
+                \DB::table('projects')
+                    ->where('my_row_id', $model->my_row_id)
+                    ->update(['id' => $model->my_row_id]);
+                $model->id = $model->my_row_id;
+            }
         });
     }
 
