@@ -942,6 +942,21 @@ class ApiController extends Controller
         // Debug application count issue
         if ($request->boolean('debug_app_count', false)) {
             try {
+                $projectId = $request->input('project_id', null);
+                
+                if ($projectId) {
+                    // Specific project debug
+                    $project = DB::select("SELECT my_row_id, id, title, user_id FROM projects WHERE my_row_id = ? OR id = ? LIMIT 1", [$projectId, $projectId]);
+                    $apps = DB::select("SELECT my_row_id, id, project_id, status, user_id FROM applications WHERE project_id = ?", [$projectId]);
+                    
+                    return response()->json([
+                        'status' => true,
+                        'project' => $project,
+                        'applications_for_project' => $apps,
+                        'application_count' => count($apps),
+                    ]);
+                }
+                
                 $projectsData = DB::select("SELECT my_row_id, id, title FROM projects LIMIT 10");
                 $applicationsData = DB::select("SELECT my_row_id, id, project_id, status FROM applications LIMIT 20");
                 
