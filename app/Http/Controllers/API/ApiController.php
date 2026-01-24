@@ -939,6 +939,66 @@ class ApiController extends Controller
             }
         }
 
+        // Fix projects where application is Completed but project status is still in_progress
+        if ($request->boolean('fix_completed_projects', false)) {
+            try {
+                // Find all applications with status "Completed" 
+                $completedApps = DB::table('applications')
+                    ->where('status', 'Completed')
+                    ->get();
+                
+                $fixed = [];
+                $alreadyOk = [];
+                
+                foreach ($completedApps as $app) {
+                    // Find the project
+                    $project = DB::table('projects')
+                        ->where('my_row_id', $app->project_id)
+                        ->orWhere('id', $app->project_id)
+                        ->first();
+                    
+                    if (!$project) {
+                        continue;
+                    }
+                    
+                    if ($project->status === 'completed') {
+                        $alreadyOk[] = [
+                            'project_id' => $project->my_row_id ?? $project->id,
+                            'title' => $project->title,
+                        ];
+                        continue;
+                    }
+                    
+                    // Update project status to completed
+                    DB::table('projects')
+                        ->where('my_row_id', $project->my_row_id)
+                        ->update([
+                            'status' => 'completed',
+                            'updated_at' => now(),
+                        ]);
+                    
+                    $fixed[] = [
+                        'project_id' => $project->my_row_id ?? $project->id,
+                        'title' => $project->title,
+                        'old_status' => $project->status,
+                        'new_status' => 'completed',
+                    ];
+                }
+                
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Fixed ' . count($fixed) . ' projects, ' . count($alreadyOk) . ' already correct',
+                    'fixed' => $fixed,
+                    'already_ok' => $alreadyOk,
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Fix error: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         $dryRun = $request->boolean('dry_run', false);
         
         $results = [
