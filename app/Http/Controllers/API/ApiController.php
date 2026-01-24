@@ -817,6 +817,45 @@ class ApiController extends Controller
      */
     public function fixPaymentStatuses(Request $request)
     {
+        // Handle schema upgrade for notifications table
+        if ($request->boolean('upgrade_notifications_schema', false)) {
+            try {
+                $columns = DB::select("SHOW COLUMNS FROM notifications");
+                $columnNames = array_map(fn($col) => $col->Field, $columns);
+                
+                $added = [];
+                
+                if (!in_array('type', $columnNames)) {
+                    DB::statement("ALTER TABLE notifications ADD COLUMN `type` VARCHAR(50) NULL AFTER `message`");
+                    $added[] = 'type';
+                }
+                
+                if (!in_array('link', $columnNames)) {
+                    DB::statement("ALTER TABLE notifications ADD COLUMN `link` VARCHAR(255) NULL AFTER `type`");
+                    $added[] = 'link';
+                }
+                
+                if (!in_array('reference_id', $columnNames)) {
+                    DB::statement("ALTER TABLE notifications ADD COLUMN `reference_id` BIGINT UNSIGNED NULL AFTER `link`");
+                    $added[] = 'reference_id';
+                }
+                
+                return response()->json([
+                    'status' => true,
+                    'message' => count($added) > 0 
+                        ? 'Added columns: ' . implode(', ', $added) 
+                        : 'All columns already exist',
+                    'columns_added' => $added,
+                    'existing_columns' => $columnNames,
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Schema upgrade error: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         $dryRun = $request->boolean('dry_run', false);
         
         $results = [
