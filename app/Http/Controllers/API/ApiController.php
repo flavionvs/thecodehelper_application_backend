@@ -943,26 +943,23 @@ class ApiController extends Controller
         if ($request->boolean('fix_completed_projects', false)) {
             try {
                 // Find all applications with status "Completed" 
-                // Select my_row_id explicitly since it's INVISIBLE
-                $completedApps = DB::table('applications')
-                    ->select('*', 'my_row_id')
-                    ->where('status', 'Completed')
-                    ->get();
+                // Use raw query to get my_row_id which is INVISIBLE
+                $completedApps = DB::select("SELECT *, my_row_id FROM applications WHERE status = 'Completed'");
                 
                 $fixed = [];
                 $alreadyOk = [];
+                $notFound = [];
                 
                 foreach ($completedApps as $app) {
-                    // Find the project - select my_row_id explicitly since it's INVISIBLE
-                    $project = DB::table('projects')
-                        ->select('*', 'my_row_id')
-                        ->where('my_row_id', $app->project_id)
-                        ->orWhere('id', $app->project_id)
-                        ->first();
+                    // Find the project - use raw query to get my_row_id which is INVISIBLE
+                    $projects = DB::select("SELECT *, my_row_id FROM projects WHERE my_row_id = ? OR id = ? LIMIT 1", [$app->project_id, $app->project_id]);
                     
-                    if (!$project) {
+                    if (empty($projects)) {
+                        $notFound[] = ['app_id' => $app->my_row_id, 'project_id' => $app->project_id];
                         continue;
                     }
+                    
+                    $project = $projects[0];
                     
                     if ($project->status === 'completed') {
                         $alreadyOk[] = [
@@ -993,11 +990,13 @@ class ApiController extends Controller
                     'message' => 'Fixed ' . count($fixed) . ' projects, ' . count($alreadyOk) . ' already correct',
                     'fixed' => $fixed,
                     'already_ok' => $alreadyOk,
+                    'not_found' => $notFound,
                 ]);
             } catch (\Exception $e) {
                 return response()->json([
                     'status' => false,
                     'message' => 'Fix error: ' . $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                 ], 500);
             }
         }
