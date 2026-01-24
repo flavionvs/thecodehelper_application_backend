@@ -973,4 +973,82 @@ class ApiController extends Controller
             'data' => $results,
         ]);
     }
+
+    /**
+     * Get notifications for the authenticated user
+     */
+    public function getNotifications(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $notifications = Notification::where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->take(50)
+            ->get();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Notifications retrieved successfully',
+            'data' => $notifications
+        ]);
+    }
+
+    /**
+     * Mark a notification as read (delete it)
+     */
+    public function markNotificationRead(Request $request, $id)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $notification = Notification::where('id', $id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$notification) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Notification not found'
+            ], 404);
+        }
+
+        $notification->delete();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Notification marked as read'
+        ]);
+    }
+
+    /**
+     * Mark all notifications as read for the authenticated user
+     */
+    public function markAllNotificationsRead(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $deleted = Notification::where('user_id', $user->id)->delete();
+
+        return response()->json([
+            'status' => true,
+            'message' => "Marked {$deleted} notifications as read"
+        ]);
+    }
 }

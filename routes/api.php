@@ -71,6 +71,11 @@ Route::group(['middleware' => ['api']], function($router) {
         Route::post('cancel-order/{order_id}', 'API\ApiController@cancelOrder');        
         Route::post('send-notification', 'API\ApiController@sendNotification');        
 
+        // Notification routes
+        Route::get('notifications', 'API\ApiController@getNotifications');
+        Route::delete('notifications/{id}', 'API\ApiController@markNotificationRead');
+        Route::delete('notifications', 'API\ApiController@markAllNotificationsRead');
+
         Route::get('product/{product_id}', 'API\ApiController@productDetail');
         Route::post('add-to-cart/{product_id}', 'API\ApiController@addToCart');
         Route::get('best-selling-product', 'API\ApiController@bestSellingProduct');
