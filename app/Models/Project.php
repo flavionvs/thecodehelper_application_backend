@@ -32,13 +32,12 @@ class Project extends Model
     /**
      * Boot method to add global scope.
      * IMPORTANT: my_row_id is INVISIBLE in MySQL, so it won't appear in SELECT *
-     * We need to explicitly select it for the relationship to work.
+     * We select *, my_row_id to include both all columns AND the invisible primary key.
      */
     protected static function booted()
     {
         static::addGlobalScope('select_my_row_id', function (Builder $builder) {
-            // Always include my_row_id since it's INVISIBLE and won't be in SELECT *
-            $builder->addSelect('projects.my_row_id');
+            $builder->selectRaw('projects.*, projects.my_row_id');
         });
     }
 

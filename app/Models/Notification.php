@@ -23,12 +23,12 @@ class Notification extends Model
     /**
      * Boot method to add global scope.
      * IMPORTANT: my_row_id is INVISIBLE in MySQL, so it won't appear in SELECT *
-     * We need to explicitly select it for relationships and operations to work.
+     * We select *, my_row_id to include both all columns AND the invisible primary key.
      */
     protected static function booted()
     {
         static::addGlobalScope('select_my_row_id', function (Builder $builder) {
-            $builder->addSelect('notifications.my_row_id');
+            $builder->selectRaw('notifications.*, notifications.my_row_id');
         });
     }
 }

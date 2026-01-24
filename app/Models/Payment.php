@@ -26,10 +26,10 @@ class Payment extends Model
     {
         /**
          * IMPORTANT: my_row_id is INVISIBLE in MySQL, so it won't appear in SELECT *
-         * We need to explicitly select it for relationships and operations to work.
+         * We select *, my_row_id to include both all columns AND the invisible primary key.
          */
         static::addGlobalScope('select_my_row_id', function (Builder $builder) {
-            $builder->addSelect('payments.my_row_id');
+            $builder->selectRaw('payments.*, payments.my_row_id');
         });
 
         /**
