@@ -833,9 +833,13 @@ class ApiController extends Controller
 
             $detail['application_id'] = $application->my_row_id ?? $application->id;
 
-            // Find project
-            $project = Project::where('id', $application->project_id)
-                ->orWhere('my_row_id', $application->project_id)
+            // Find project - explicitly select all columns including my_row_id
+            $project = Project::query()
+                ->select('projects.*')
+                ->where(function($q) use ($application) {
+                    $q->where('id', $application->project_id)
+                      ->orWhere('my_row_id', $application->project_id);
+                })
                 ->first();
 
             if (!$project) {
@@ -847,6 +851,7 @@ class ApiController extends Controller
             }
 
             $detail['project_id'] = $project->id;
+            $detail['project_my_row_id'] = $project->my_row_id;
             $detail['project_title'] = $project->title;
 
             $needsFix = false;
@@ -886,12 +891,22 @@ class ApiController extends Controller
 
             if (!$dryRun) {
                 try {
+                    // Log the IDs we're using for update
+                    \Log::info('[FixPaymentStatuses] About to fix', [
+                        'payment_id' => $payment->id,
+                        'app_my_row_id' => $application->my_row_id,
+                        'project_id' => $project->id,
+                        'project_my_row_id' => $project->my_row_id,
+                        'appPk' => $appPk,
+                    ]);
+
                     DB::transaction(function () use ($application, $project, $appPk) {
                         // Fix application status
                         if ($application->status === 'Pending') {
-                            DB::table('applications')
+                            $affectedApp = DB::table('applications')
                                 ->where('my_row_id', $application->my_row_id)
                                 ->update(['status' => 'Approved']);
+                            \Log::info('[FixPaymentStatuses] Application update affected rows: ' . $affectedApp);
                         }
 
                         // Fix project using direct DB query (more reliable with custom primary key)
@@ -904,9 +919,10 @@ class ApiController extends Controller
                         }
                         
                         // Update by my_row_id (the actual primary key)
-                        DB::table('projects')
+                        $affectedProj = DB::table('projects')
                             ->where('my_row_id', $project->my_row_id)
                             ->update($updateData);
+                        \Log::info('[FixPaymentStatuses] Project update affected rows: ' . $affectedProj . ' for my_row_id: ' . $project->my_row_id);
                     });
 
                     \Log::info('[FixPaymentStatuses] Fixed via API', [
