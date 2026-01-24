@@ -992,6 +992,14 @@ class ApiProjectController extends Controller
                     'updated_at' => now(),
                 ]);
 
+            // Update project status to completed
+            DB::table('projects')
+                ->where('my_row_id', $project->my_row_id)
+                ->update([
+                    'status' => 'completed',
+                    'updated_at' => now(),
+                ]);
+
             ApplicationStatus::updateOrCreate([
                 'application_id' => $appPk,
                 'status' => 'Completed',
@@ -1053,7 +1061,8 @@ class ApiProjectController extends Controller
             $reqId = (int) $application_id;
 
             // ✅ accept both (prefer my_row_id)
-            $application = Application::where('my_row_id', $reqId)
+            $application = Application::select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
+                ->where('my_row_id', $reqId)
                 ->orWhere('id', $reqId)
                 ->first();
 
@@ -1061,11 +1070,16 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
             }
 
-            $application->status = 'Cancelled';
-            $application->cancel_reason = request()->cancel_reason;
-            $application->save();
-
             $appPk = $this->applicationPk($application);
+
+            // Use direct DB update to avoid INVISIBLE my_row_id column issues with Eloquent save()
+            DB::table('applications')
+                ->where('my_row_id', $appPk)
+                ->update([
+                    'status' => 'Cancelled',
+                    'cancel_reason' => request()->cancel_reason,
+                    'updated_at' => now(),
+                ]);
 
             ApplicationStatus::updateOrCreate([
                 'application_id' => $appPk,
