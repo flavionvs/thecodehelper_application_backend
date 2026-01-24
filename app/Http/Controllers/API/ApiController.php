@@ -889,18 +889,24 @@ class ApiController extends Controller
                     DB::transaction(function () use ($application, $project, $appPk) {
                         // Fix application status
                         if ($application->status === 'Pending') {
-                            Application::where('my_row_id', $application->my_row_id)->update([
-                                'status' => 'Approved',
-                            ]);
+                            DB::table('applications')
+                                ->where('my_row_id', $application->my_row_id)
+                                ->update(['status' => 'Approved']);
                         }
 
-                        // Fix project
-                        $project->payment_status = 'paid';
+                        // Fix project using direct DB query (more reliable with custom primary key)
+                        $updateData = [
+                            'payment_status' => 'paid',
+                            'selected_application_id' => $appPk,
+                        ];
                         if ($project->status !== 'completed') {
-                            $project->status = 'in_progress';
+                            $updateData['status'] = 'in_progress';
                         }
-                        $project->selected_application_id = $appPk;
-                        $project->save();
+                        
+                        // Update by my_row_id (the actual primary key)
+                        DB::table('projects')
+                            ->where('my_row_id', $project->my_row_id)
+                            ->update($updateData);
                     });
 
                     \Log::info('[FixPaymentStatuses] Fixed via API', [
