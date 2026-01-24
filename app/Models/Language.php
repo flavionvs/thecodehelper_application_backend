@@ -11,6 +11,13 @@ use DB;
 
 class Language extends Model
 {    
+    /**
+     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
+     */
+    protected $primaryKey = 'my_row_id';
+    public $incrementing = true;
+    protected $keyType = 'int';
+
     protected $guarded = [];
     protected $table = 'programming_languages';
     public function insertUpdate($request, $id = null){      

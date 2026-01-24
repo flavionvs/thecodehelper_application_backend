@@ -7,5 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Message extends Model
 {
-    use HasFactory;        
+    use HasFactory;
+
+    /**
+     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
+     */
+    protected $primaryKey = 'my_row_id';
+    public $incrementing = true;
+    protected $keyType = 'int';
 }
