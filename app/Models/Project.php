@@ -63,9 +63,27 @@ class Project extends Model
         return ['status' => true];
     }
 
+    /**
+     * Get applications for this project.
+     * 
+     * IMPORTANT: applications.project_id may reference either projects.id or projects.my_row_id
+     * Since projects.id is 0 for newer records but my_row_id is always valid,
+     * we use a custom query that matches both.
+     */
     public function application()
     {
-        return $this->hasMany(Application::class);
+        // Use my_row_id as the foreign key since it's always the real primary key
+        return $this->hasMany(Application::class, 'project_id', 'my_row_id');
+    }
+
+    /**
+     * Alternative method to get application count that handles the id/my_row_id issue
+     */
+    public function getApplicationCountAttribute()
+    {
+        return Application::where('project_id', $this->my_row_id)
+            ->orWhere('project_id', $this->id)
+            ->count();
     }
 
     public function user()
@@ -82,10 +100,14 @@ class Project extends Model
      * IMPORTANT:
      * Applications primary key is now `my_row_id` (see Application model fix).
      * Also note: application.status values appear to be "Approved" with capital A.
+     * Check both id and my_row_id since applications.project_id may reference either.
      */
     public function getApprovedFreelancerIdAttribute()
     {
-        $application = Application::where('project_id', $this->id)
+        $application = Application::where(function($q) {
+                $q->where('project_id', $this->my_row_id)
+                  ->orWhere('project_id', $this->id);
+            })
             ->where('status', 'Approved')
             ->first();
 
@@ -97,10 +119,15 @@ class Project extends Model
         $data = DB::table('projects')
             ->join('users', 'users.id', 'projects.user_id')
             ->join('categories', 'categories.id', 'projects.category_id')
-            ->leftJoin('applications', 'applications.project_id', 'projects.id')
-            ->groupBy('projects.id')
+            ->leftJoin('applications', function($join) {
+                // Match applications.project_id to either projects.id or projects.my_row_id
+                $join->on('applications.project_id', '=', 'projects.my_row_id')
+                     ->orOn('applications.project_id', '=', 'projects.id');
+            })
+            ->groupBy('projects.my_row_id')
             ->select(
                 'projects.*',
+                DB::raw('projects.my_row_id as id'),  // Use my_row_id as the display id
                 'categories.name as category',
                 'users.first_name as client',
                 // applications.my_row_id is the real PK; using COUNT(applications.id) can return 0
