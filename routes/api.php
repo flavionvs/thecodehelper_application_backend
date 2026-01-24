@@ -9,7 +9,7 @@ Route::group(['middleware' => ['api']], function($router) {
         // ✅ Stripe Webhook (NO auth, NO jwt)
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
-    Route::post('send-message', 'API\ApiController@sendMessage');
+    // Removed duplicate: Route::post('send-message') - use the one inside jwt.verify middleware
     Route::post('filter', 'API\ApiController@filter');
     Route::get('category', 'API\ApiController@category');
 
