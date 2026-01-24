@@ -778,4 +778,155 @@ class ApiController extends Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()]);
         }
     }
+
+    /**
+     * Fix inconsistent payment statuses.
+     * This endpoint fixes applications/projects that have succeeded payments
+     * but incorrect status values.
+     * 
+     * @param Request $request - accepts 'dry_run' boolean parameter
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function fixPaymentStatuses(Request $request)
+    {
+        $dryRun = $request->boolean('dry_run', false);
+        
+        $results = [
+            'dry_run' => $dryRun,
+            'checked' => 0,
+            'already_correct' => 0,
+            'fixed' => 0,
+            'errors' => 0,
+            'details' => [],
+        ];
+
+        // Find all succeeded payments
+        $payments = Payment::where('paymentStatus', 'succeeded')
+            ->whereNotNull('application_id')
+            ->where('application_id', '>', 0)
+            ->get();
+
+        $results['checked'] = $payments->count();
+
+        foreach ($payments as $payment) {
+            $detail = [
+                'payment_id' => $payment->id,
+                'payment_intent' => $payment->paymentIntentId,
+                'changes' => [],
+                'status' => 'ok',
+            ];
+
+            // Find application by my_row_id OR id
+            $application = Application::query()
+                ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
+                ->where('applications.my_row_id', $payment->application_id)
+                ->orWhere('applications.id', $payment->application_id)
+                ->first();
+
+            if (!$application) {
+                $detail['status'] = 'error';
+                $detail['error'] = "Application #{$payment->application_id} not found";
+                $results['errors']++;
+                $results['details'][] = $detail;
+                continue;
+            }
+
+            $detail['application_id'] = $application->my_row_id ?? $application->id;
+
+            // Find project
+            $project = Project::where('id', $application->project_id)
+                ->orWhere('my_row_id', $application->project_id)
+                ->first();
+
+            if (!$project) {
+                $detail['status'] = 'error';
+                $detail['error'] = "Project #{$application->project_id} not found";
+                $results['errors']++;
+                $results['details'][] = $detail;
+                continue;
+            }
+
+            $detail['project_id'] = $project->id;
+            $detail['project_title'] = $project->title;
+
+            $needsFix = false;
+
+            // Check if application needs fixing
+            if ($application->status === 'Pending') {
+                $needsFix = true;
+                $detail['changes'][] = "Application status: Pending → Approved";
+            }
+
+            // Check if project payment_status needs fixing
+            if ($project->payment_status !== 'paid') {
+                $needsFix = true;
+                $detail['changes'][] = "Project payment_status: {$project->payment_status} → paid";
+            }
+
+            // Check if project status needs fixing
+            if ($project->status !== 'in_progress' && $project->status !== 'completed') {
+                $needsFix = true;
+                $detail['changes'][] = "Project status: {$project->status} → in_progress";
+            }
+
+            // Check if selected_application_id is set
+            $appPk = $application->my_row_id ?: $application->id;
+            if (!$project->selected_application_id || $project->selected_application_id != $appPk) {
+                $needsFix = true;
+                $detail['changes'][] = "Project selected_application_id: {$project->selected_application_id} → {$appPk}";
+            }
+
+            if (!$needsFix) {
+                $results['already_correct']++;
+                $results['details'][] = $detail;
+                continue;
+            }
+
+            $detail['status'] = $dryRun ? 'would_fix' : 'fixed';
+
+            if (!$dryRun) {
+                try {
+                    DB::transaction(function () use ($application, $project, $appPk) {
+                        // Fix application status
+                        if ($application->status === 'Pending') {
+                            Application::where('my_row_id', $application->my_row_id)->update([
+                                'status' => 'Approved',
+                            ]);
+                        }
+
+                        // Fix project
+                        $project->payment_status = 'paid';
+                        if ($project->status !== 'completed') {
+                            $project->status = 'in_progress';
+                        }
+                        $project->selected_application_id = $appPk;
+                        $project->save();
+                    });
+
+                    \Log::info('[FixPaymentStatuses] Fixed via API', [
+                        'payment_id' => $payment->id,
+                        'application_id' => $application->my_row_id,
+                        'project_id' => $project->id,
+                    ]);
+                } catch (\Exception $e) {
+                    $detail['status'] = 'error';
+                    $detail['error'] = $e->getMessage();
+                    $results['errors']++;
+                    $results['details'][] = $detail;
+                    continue;
+                }
+            }
+
+            $results['fixed']++;
+            $results['details'][] = $detail;
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => $dryRun 
+                ? "Dry run complete. {$results['fixed']} records would be fixed." 
+                : "Fixed {$results['fixed']} records.",
+            'data' => $results,
+        ]);
+    }
 }

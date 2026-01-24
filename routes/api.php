@@ -37,6 +37,8 @@ Route::group(['middleware' => ['api']], function($router) {
         Route::get('wallet-balance', 'API\ApiController@walletBalance');        
         Route::get('account-details', 'API\ApiUserController@accountDetails');        
         
+        // Admin/Fix endpoint - requires auth
+        Route::post('fix-payment-statuses', 'API\ApiController@fixPaymentStatuses');
         
         Route::post('send-contact-query', 'API\ApiController@sendContactQuery');
         
