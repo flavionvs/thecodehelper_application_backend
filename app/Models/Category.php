@@ -11,14 +11,11 @@ use DB;
 use Illuminate\Support\Facades\Cache;
 
 class Category extends Model
-{    
+{
     /**
-     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
+     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in foreign keys.
+     * Keep default primaryKey = 'id' for compatibility.
      */
-    protected $primaryKey = 'my_row_id';
-    public $incrementing = true;
-    protected $keyType = 'int';
-
     protected $guarded = [];
     public function insertUpdate($request, $id = null){      
         if(!empty($id)){           

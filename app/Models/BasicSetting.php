@@ -9,9 +9,6 @@ use Storage;
 class BasicSetting extends Model
 {
     /**
-     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
+     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in application.
      */
-    protected $primaryKey = 'my_row_id';
-    public $incrementing = true;
-    protected $keyType = 'int';
 }

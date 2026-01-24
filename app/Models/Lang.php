@@ -10,14 +10,10 @@ use DB;
 
 
 class Lang extends Model
-{    
+{
     /**
-     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
+     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in foreign keys.
      */
-    protected $primaryKey = 'my_row_id';
-    public $incrementing = true;
-    protected $keyType = 'int';
-
     protected $guarded = [];
     protected $table = 'langs';
     

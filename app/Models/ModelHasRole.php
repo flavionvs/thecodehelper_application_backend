@@ -11,11 +11,8 @@ class ModelHasRole extends Model
     use HasFactory;
 
     /**
-     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
+     * NOTE: Table has INVISIBLE my_row_id as DB primary key.
      */
-    protected $primaryKey = 'my_row_id';
-    public $incrementing = true;
-    protected $keyType = 'int';
     
     public function role(){
         return $this->belongsTo(Role::Class);

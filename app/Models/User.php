@@ -17,12 +17,11 @@ class User extends Authenticatable implements JWTSubject
     use HasApiTokens, HasFactory, Notifiable, HasRoles;
 
     /**
-     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
-     * Must set this or Eloquent will use 'id' which causes issues.
+     * NOTE: users table has INVISIBLE my_row_id as DB primary key,
+     * but we use 'id' column as the logical identifier throughout
+     * the application (foreign keys, JWT, etc.).
+     * Keep default primaryKey = 'id' for backward compatibility.
      */
-    protected $primaryKey = 'my_row_id';
-    public $incrementing = true;
-    protected $keyType = 'int';
 
     /**
      * The attributes that are mass assignable.

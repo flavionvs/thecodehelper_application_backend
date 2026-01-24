@@ -10,12 +10,9 @@ class UserLang extends Model
     use HasFactory;
 
     /**
-     * Production DB primary key is my_row_id (AUTO_INCREMENT, INVISIBLE).
+     * NOTE: Table has INVISIBLE my_row_id as DB primary key.
+     * Using 'id' for compatibility with existing code.
      */
-    protected $primaryKey = 'my_row_id';
-    public $incrementing = true;
-    protected $keyType = 'int';
-
     protected $guarded = [];
 
     public function lang(){

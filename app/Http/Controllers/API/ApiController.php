@@ -902,6 +902,43 @@ class ApiController extends Controller
             }
         }
 
+        // Check which tables have id=0 issues (id column not auto-incrementing)
+        if ($request->boolean('check_id_issues', false)) {
+            try {
+                $tablesToCheck = ['users', 'categories', 'technologies', 'langs', 'notifications', 'applications', 'projects', 'payments', 'messages'];
+                $results = [];
+                
+                foreach ($tablesToCheck as $table) {
+                    try {
+                        // Check if table has id column and if any have id=0
+                        $sample = DB::select("SELECT my_row_id, id FROM `{$table}` LIMIT 5");
+                        $zeroIds = DB::select("SELECT COUNT(*) as cnt FROM `{$table}` WHERE id = 0 OR id IS NULL");
+                        $totalCount = DB::select("SELECT COUNT(*) as cnt FROM `{$table}`");
+                        
+                        $results[$table] = [
+                            'sample' => $sample,
+                            'zero_id_count' => $zeroIds[0]->cnt ?? 0,
+                            'total_count' => $totalCount[0]->cnt ?? 0,
+                            'has_id_issue' => ($zeroIds[0]->cnt ?? 0) > 0,
+                        ];
+                    } catch (\Exception $e) {
+                        $results[$table] = ['error' => $e->getMessage()];
+                    }
+                }
+                
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Tables with id=0 issues need my_row_id as primaryKey in Eloquent',
+                    'table_analysis' => $results,
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Check error: ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         $dryRun = $request->boolean('dry_run', false);
         
         $results = [
