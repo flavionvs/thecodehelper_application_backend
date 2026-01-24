@@ -7,19 +7,9 @@ use App\Models\Message;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Pusher\Pusher;
 
 class ApiChatController extends Controller
 {
-    public function testSendMessage(Request $request){
-        return response()->json([
-            'status' => true,
-            'message' => 'Test endpoint reached',
-            'auth_id' => authId(),
-            'request_data' => $request->all(),
-        ]);
-    }
-
     public function getMessage($user_id){        
         $messages = Message::where(function($q) use($user_id){
                         $q->where('from', $user_id)->where('to', authId());
@@ -44,68 +34,31 @@ class ApiChatController extends Controller
     }
 
     public function sendMessage(Request $request){
-        try {
-            $from = authId();
-            $to = $request->to;        
-            $message = $request->message;
-            
-            // Handle file upload if present
-            $file = null;
-            if ($request->hasFile('file')) {
-                $file = fileSave($request->file('file'), 'upload/chat');
-            }
-            
-            // Use DB::table for insert to avoid INVISIBLE my_row_id issues with Eloquent save()
-            $insertId = DB::table('messages')->insertGetId([
-                'from' => $from,
-                'to' => $to,
-                'message' => $message,
-                'file' => $file,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            
-            $fileUrl = $file ? img($file) : null;
-            $data = [
+        $from = authId();
+        $to = $request->to;        
+        $message = $request->message;
+        
+        $insertId = DB::table('messages')->insertGetId([
+            'from' => $from,
+            'to' => $to,
+            'message' => $message,
+            'file' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        
+        return response()->json([
+            'status' => true,
+            'message' => 'Messages sent successfully.',
+            'data' => [
                 'id' => $insertId,
                 'from' => $from,
                 'to' => $to,
                 'message' => $message,
-                'created_at' => timeFormat(now()),
-                'file' => $fileUrl
-            ];
-
-            // Try to trigger pusher but don't fail if it doesn't work
-            try {
-                $options = array(
-                    'cluster' => 'ap2',
-                    'useTLS' => true
-                );
-                $pusher = new Pusher(
-                    env('PUSHER_APP_KEY'),
-                    env('PUSHER_APP_SECRET'),
-                    env('PUSHER_APP_ID'),
-                    $options
-                );
-                $pusher->trigger('my-channel', 'my-event', $data);
-            } catch (\Exception $e) {
-                // Log pusher error but continue - not critical
-                \Log::warning('Pusher failed: ' . $e->getMessage());
-            }
-            
-            return response()->json([
-                'status' => true,
-                'message' => 'Messages sent successfully.',
-                'data' => $data,
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('sendMessage error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
-            return response()->json([
-                'status' => false,
-                'message' => 'Error sending message: ' . $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ], 500);
-        }
+                'created_at' => now()->format('Y-m-d H:i:s'),
+                'file' => null
+            ],
+        ]);
     }
 
     public function getChatUsers(){
