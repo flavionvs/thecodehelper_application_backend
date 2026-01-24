@@ -833,9 +833,9 @@ class ApiController extends Controller
 
             $detail['application_id'] = $application->my_row_id ?? $application->id;
 
-            // Find project - explicitly select all columns including my_row_id
-            $project = Project::query()
-                ->select('projects.*')
+            // Find project - explicitly select my_row_id since it may be INVISIBLE in MySQL
+            $project = DB::table('projects')
+                ->select('projects.*', 'projects.my_row_id')
                 ->where(function($q) use ($application) {
                     $q->where('id', $application->project_id)
                       ->orWhere('my_row_id', $application->project_id);
