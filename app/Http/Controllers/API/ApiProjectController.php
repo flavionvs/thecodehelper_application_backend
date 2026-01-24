@@ -208,8 +208,10 @@ class ApiProjectController extends Controller
                 // Get approved freelancer's user_id
                 $approvedApp = DB::table('applications')
                     ->whereIn('project_id', $candidateProjectIds)
-                    ->where('status', 'Approved')
-                    ->orWhere('status', 'Completion Requested')
+                    ->where(function($q) {
+                        $q->where('status', 'Approved')
+                          ->orWhere('status', 'Completion Requested');
+                    })
                     ->first();
                 $array['chat_user_id'] = $approvedApp->user_id ?? null;
             } else {
