@@ -1,0 +1,31 @@
+server {
+    listen 8080 default_server;
+    listen [::]:8080 default_server;
+    
+    root /home/site/wwwroot/public;
+    index index.php index.html index.htm;
+    
+    server_name _;
+    
+    # Increase upload size limit to 50MB
+    client_max_body_size 50M;
+    
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+    
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        
+        # Increase timeouts for large uploads
+        fastcgi_read_timeout 300;
+        fastcgi_send_timeout 300;
+    }
+    
+    location ~ /\.ht {
+        deny all;
+    }
+}
