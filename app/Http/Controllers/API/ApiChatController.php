@@ -38,14 +38,22 @@ class ApiChatController extends Controller
         $to = $request->to;        
         $message = $request->message;
         
+        // Handle file upload
+        $file = null;
+        if ($request->hasFile('file')) {
+            $file = fileSave($request->file('file'), 'upload/chat');
+        }
+        
         $insertId = DB::table('messages')->insertGetId([
             'from' => $from,
             'to' => $to,
             'message' => $message,
-            'file' => null,
+            'file' => $file,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        
+        $fileUrl = $file ? img($file) : null;
         
         return response()->json([
             'status' => true,
@@ -56,7 +64,7 @@ class ApiChatController extends Controller
                 'to' => $to,
                 'message' => $message,
                 'created_at' => now()->format('Y-m-d H:i:s'),
-                'file' => null
+                'file' => $fileUrl
             ],
         ]);
     }
