@@ -63,12 +63,8 @@ class StripeWebhookController extends Controller
 
             $appIdInt = (int) $appId;
 
-            // Find Application by id first, then legacy id (backward compat).
-            $application = Application::query()
-                ->select('applications.*', DB::raw('applications.id as id'))
-                ->where('applications.id', $appIdInt)
-                ->orWhere('applications.id', $appIdInt)
-                ->first();
+            // Find Application by id
+            $application = Application::find($appIdInt);
 
             if (!$application) {
                 Log::warning('[StripeWebhook] Application not found (ignored)', [
@@ -110,10 +106,8 @@ class StripeWebhookController extends Controller
                     $finalUserId,
                     $amount
                 ) {
-                    // Find project by id OR id (critical)
-                    $project = Project::query()
-                        ->where('id', $finalProjectLookupId)
-                        ->orWhere('id', $finalProjectLookupId)
+                    // Find project by id
+                    $project = Project::where('id', $finalProjectLookupId)
                         ->lockForUpdate()
                         ->first();
 
