@@ -10,7 +10,7 @@ class UserLang extends Model
     use HasFactory;
 
     /**
-     * NOTE: Table has INVISIBLE my_row_id as DB primary key.
+     * NOTE: Table has INVISIBLE id as DB primary key.
      * Using 'id' for compatibility with existing code.
      */
     protected $guarded = [];

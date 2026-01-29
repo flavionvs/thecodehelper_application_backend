@@ -10,6 +10,6 @@ class Service extends Model
     use HasFactory;
 
     /**
-     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in foreign keys.
+     * NOTE: Table has INVISIBLE id, but 'id' is used in foreign keys.
      */
 }

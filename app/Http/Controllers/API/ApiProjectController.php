@@ -19,17 +19,11 @@ use Illuminate\Support\Facades\Validator;
 class ApiProjectController extends Controller
 {
     /**
-     * ✅ Resolver that works with BOTH schemas:
-     * - routes might send projects.id OR projects.my_row_id
-     * - applications.project_id might store projects.id OR projects.my_row_id
-     *
-     * Returns: [$businessId (projects.id), $routeId (projects.my_row_id), $projectModel, $errResponse]
+     * Resolve project by ID
      */
     private function resolveProject($project_id)
     {
-        $project = Project::where('id', $project_id)
-            ->orWhere('my_row_id', $project_id)
-            ->first();
+        $project = Project::find($project_id);
 
         if (!$project) {
             return [null, null, null, response()->json([
@@ -38,7 +32,7 @@ class ApiProjectController extends Controller
             ], 404)];
         }
 
-        return [(int) $project->id, (int) $project->my_row_id, $project, null];
+        return [(int) $project->id, (int) $project->id, $project, null];
     }
 
     private function projectIdCandidates($businessId, $routeId)
@@ -50,17 +44,11 @@ class ApiProjectController extends Controller
     }
 
     /**
-     * ✅ Application primary key helper (new schema)
-     * - prefers my_row_id (real PK)
-     * - falls back to id for legacy
+     * Get application primary key
      */
     private function applicationPk($app)
     {
-        $pk = (int) ($app->my_row_id ?? 0);
-        if ($pk > 0) return $pk;
-
-        $legacy = (int) ($app->id ?? 0);
-        return $legacy > 0 ? $legacy : 0;
+        return (int) ($app->id ?? 0);
     }
 
     public function projects(Request $request, $id = null)
@@ -74,12 +62,8 @@ class ApiProjectController extends Controller
         }
 
         if (authUser()->role == 'Client') {
-            // ✅ FIX: join must work whether applications.project_id matches projects.id OR projects.my_row_id
             $project_ids = DB::table('applications')
-                ->join('projects', function ($join) {
-                    $join->on('projects.id', '=', 'applications.project_id')
-                        ->orOn('projects.my_row_id', '=', 'applications.project_id');
-                })
+                ->join('projects', 'projects.id', '=', 'applications.project_id')
                 ->where('projects.user_id', authId());
         } else {
             $project_ids = DB::table('applications')
@@ -101,19 +85,16 @@ class ApiProjectController extends Controller
 
         $appProjectIds = $project_ids->pluck('applications.project_id')->toArray();
 
-        // Global scope in Project model handles selecting my_row_id
+        // Global scope in Project model handles selecting id
         $project = Project::when($businessId || $routeId, function ($q) use ($businessId, $routeId) {
                 $q->where(function ($qq) use ($businessId, $routeId) {
                     if ($businessId) $qq->orWhere('projects.id', $businessId);
-                    if ($routeId) $qq->orWhere('projects.my_row_id', $routeId);
+                    if ($routeId) $qq->orWhere('projects.id', $routeId);
                 });
             })
             ->when(request()->type != 'my-projects' && !$businessId && !$routeId, function ($q) use ($appProjectIds) {
                 if (!empty($appProjectIds)) {
-                    $q->where(function ($qq) use ($appProjectIds) {
-                        $qq->whereIn('projects.id', $appProjectIds)
-                            ->orWhereIn('projects.my_row_id', $appProjectIds);
-                    });
+                    $q->whereIn('projects.id', $appProjectIds);
                 } else {
                     $q->whereRaw('1 = 0');
                 }
@@ -124,7 +105,7 @@ class ApiProjectController extends Controller
             ->when(request()->search, function ($q) {
                 $q->where('projects.title', 'like', '%' . request()->search . '%');
             })
-            ->orderByDesc('projects.my_row_id')
+            ->orderByDesc('projects.id')
             ->paginate(10);
 
         $data = [];
@@ -132,7 +113,7 @@ class ApiProjectController extends Controller
 
         foreach ($project as $item) {
 
-            $candidateProjectIds = $this->projectIdCandidates($item->id, $item->my_row_id);
+            $candidateProjectIds = $this->projectIdCandidates($item->id, $item->id);
 
             // ✅ IMPORTANT: Fetch application only for the current viewer/user
             $applicationQuery = DB::table('applications')
@@ -142,10 +123,7 @@ class ApiProjectController extends Controller
                 $applicationQuery->where('applications.user_id', authId());
             } else {
                 // Client
-                $applicationQuery->join('projects', function ($join) {
-                        $join->on('projects.id', '=', 'applications.project_id')
-                            ->orOn('projects.my_row_id', '=', 'applications.project_id');
-                    })
+                $applicationQuery->join('projects', 'projects.id', '=', 'applications.project_id')
                     ->where('projects.user_id', authId())
                     ->select('applications.*', 'projects.status as project_status');
             }
@@ -191,7 +169,7 @@ class ApiProjectController extends Controller
 
             $array = [];
             $array['id'] = $item->id;
-            $array['route_id'] = $item->my_row_id;
+            $array['route_id'] = $item->id;
             $array['applied'] = Application::whereIn('project_id', $candidateProjectIds)->where('user_id', authId())->exists();
             $array['category_id'] = $item->category_id;
             $array['title'] = $item->title;
@@ -250,9 +228,7 @@ class ApiProjectController extends Controller
         if ($err) return $err;
 
         $project = Project::where('user_id', authId())
-            ->where(function ($q) use ($businessId, $routeId) {
-                $q->where('id', $businessId)->orWhere('my_row_id', $routeId);
-            })
+            ->where('id', $businessId)
             ->first();
 
         if (!$project) {
@@ -281,16 +257,12 @@ class ApiProjectController extends Controller
 
     public function ongoingProjects()
     {
-        // ✅ FIX join to support both possible mappings
         $project = Project::where('projects.user_id', authId())
-            ->join('applications', function ($join) {
-                $join->on('applications.project_id', '=', 'projects.id')
-                    ->orOn('applications.project_id', '=', 'projects.my_row_id');
-            })
+            ->join('applications', 'applications.project_id', '=', 'projects.id')
             ->where('applications.status', 'Approved')
             ->groupBy('projects.id')
             ->orderByDesc('applications.created_at')
-            ->select('projects.*', DB::raw('(SELECT COUNT(my_row_id) FROM applications WHERE project_id = projects.id OR project_id = projects.my_row_id) as application_count'))
+            ->select('projects.*', DB::raw('(SELECT COUNT(id) FROM applications WHERE project_id = projects.id) as application_count'))
             ->paginate(10);
 
         $data = [];
@@ -355,13 +327,13 @@ class ApiProjectController extends Controller
 
             /**
              * ✅ BRIDGE FIX (kept from your version):
-             * If id is missing/0 but we have my_row_id, set id to my_row_id.
+             * If id is missing/0 but we have id, set id to id.
              */
-            $routeId = $project->my_row_id ?? null;
+            $routeId = $project->id ?? null;
 
             if ($routeId && (empty($project->id) || (int)$project->id === 0)) {
                 DB::table('projects')
-                    ->where('my_row_id', $routeId)
+                    ->where('id', $routeId)
                     ->update(['id' => $routeId]);
 
                 $project->id = $routeId;
@@ -374,7 +346,7 @@ class ApiProjectController extends Controller
                 'message' => 'Projects created successfully!',
                 'data' => [
                     'id' => $project->id,
-                    'route_id' => $project->my_row_id ?? $project->id,
+                    'route_id' => $project->id,
                     'status' => $project->status,
                     'payment_status' => $project->payment_status,
                 ],
@@ -419,9 +391,7 @@ class ApiProjectController extends Controller
             }
 
             $project = Project::where('user_id', authId())
-                ->where(function ($q) use ($businessId, $routeId) {
-                    $q->where('id', $businessId)->orWhere('my_row_id', $routeId);
-                })
+                ->where('id', $businessId)
                 ->first();
 
             if (!$project) {
@@ -457,9 +427,7 @@ class ApiProjectController extends Controller
         DB::beginTransaction();
 
         try {
-            $project = Project::where(function ($q) use ($businessId, $routeId) {
-                $q->where('id', $businessId)->orWhere('my_row_id', $routeId);
-            })->first();
+            $project = Project::find($businessId);
 
             if ($project) {
                 $project->delete();
@@ -616,15 +584,12 @@ class ApiProjectController extends Controller
 
         $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
 
-        // ✅ FIX: include my_row_id in select and return it to frontend
-        $applications = Application::join('projects', function ($join) {
-                $join->on('projects.id', '=', 'applications.project_id')
-                    ->orOn('projects.my_row_id', '=', 'applications.project_id');
-            })
+        // Get applications for project
+        $applications = Application::join('projects', 'projects.id', '=', 'applications.project_id')
             ->where('projects.user_id', authId())
             ->whereIn('applications.project_id', $candidateProjectIds)
-            ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
-            ->orderByDesc('my_row_id')
+            ->select('applications.*')
+            ->orderByDesc('applications.id')
             ->paginate(10);
 
         $data = [];
@@ -638,7 +603,7 @@ class ApiProjectController extends Controller
                 'id' => $item->id,
 
                 // ✅ this is what frontend must use
-                'my_row_id' => $item->my_row_id,
+                'id' => $item->id,
 
                 // ✅ optional: helpful for debugging
                 'application_pk' => $appPk,
@@ -724,17 +689,11 @@ class ApiProjectController extends Controller
                 ], 422);
             }
 
-            // ✅ Accept BOTH schemas, but prefer my_row_id
-            $applied = Application::join('projects', function ($join) {
-                    $join->on('projects.id', '=', 'applications.project_id')
-                        ->orOn('projects.my_row_id', '=', 'applications.project_id');
-                })
+            // Get application by ID
+            $applied = Application::join('projects', 'projects.id', '=', 'applications.project_id')
                 ->where('projects.user_id', authId())
-                ->where(function ($q) use ($reqAppId) {
-                    $q->where('applications.my_row_id', $reqAppId)
-                      ->orWhere('applications.id', $reqAppId);
-                })
-                ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
+                ->where('applications.id', $reqAppId)
+                ->select('applications.*')
                 ->first();
 
             if (!$applied) {
@@ -756,7 +715,7 @@ class ApiProjectController extends Controller
                 \Log::error('[updateApplicationStatus] application has no usable PK', [
                     'reqAppId' => $reqAppId,
                     'application' => [
-                        'my_row_id' => $applied->my_row_id ?? null,
+                        'id' => $applied->id ?? null,
                         'id' => $applied->id ?? null,
                         'project_id' => $applied->project_id ?? null,
                     ],
@@ -773,10 +732,8 @@ class ApiProjectController extends Controller
                 $applied->save();
             }
 
-            // ✅ Find project by id OR my_row_id (because application.project_id could be either)
-            $proj = Project::where('id', $applied->project_id)
-                ->orWhere('my_row_id', $applied->project_id)
-                ->first();
+            // Find project by application's project_id
+            $proj = Project::find($applied->project_id);
 
             if (!$proj) {
                 DB::rollBack();
@@ -834,7 +791,7 @@ class ApiProjectController extends Controller
             // ✅ Flip project (THIS is the goal)
             $proj->payment_status = 'paid';
             $proj->status = 'in_progress';
-            $proj->selected_application_id = $appPk; // ✅ always stable my_row_id
+            $proj->selected_application_id = $appPk; // ✅ always stable id
             $proj->save();
 
             // ✅ Notifications should never break flow
@@ -845,7 +802,7 @@ class ApiProjectController extends Controller
                     'message' => 'Your application has been approved',
                     'type' => 'project',
                     'link' => '/dashboard?tab=ongoing',
-                    'reference_id' => $proj->my_row_id ?? $proj->id,
+                    'reference_id' => $proj->id,
                 ]);
 
                 Notification::create([
@@ -854,7 +811,7 @@ class ApiProjectController extends Controller
                     'message' => 'Project moved to in progress.',
                     'type' => 'project',
                     'link' => '/dashboard?tab=ongoing',
-                    'reference_id' => $proj->my_row_id ?? $proj->id,
+                    'reference_id' => $proj->id,
                 ]);
             } catch (\Throwable $e) {
                 \Log::error('[updateApplicationStatus] notification failed: ' . $e->getMessage());
@@ -865,7 +822,7 @@ class ApiProjectController extends Controller
             \Log::info('[updateApplicationStatus] success', [
                 'appPk' => $appPk,
                 'project_id' => $proj->id ?? null,
-                'project_my_row_id' => $proj->my_row_id ?? null,
+                'project_id' => $proj->id ?? null,
                 'paymentIntentId' => $paymentIntentId,
             ]);
 
@@ -925,9 +882,9 @@ class ApiProjectController extends Controller
 
             $appPk = $this->applicationPk($application);
 
-            // Use direct DB update to avoid INVISIBLE my_row_id column issues with Eloquent save()
+            // Use direct DB update to avoid INVISIBLE id column issues with Eloquent save()
             DB::table('applications')
-                ->where('my_row_id', $appPk)
+                ->where('id', $appPk)
                 ->update([
                     'status' => 'Completion Requested',
                     'remark' => request()->remark,
@@ -954,7 +911,7 @@ class ApiProjectController extends Controller
                 'message' => 'Project completion request sent successfully',
                 'type' => 'completion',
                 'link' => '/dashboard?tab=ongoing',
-                'reference_id' => $project->my_row_id ?? $project->id,
+                'reference_id' => $project->id,
             ]);
 
             Notification::create([
@@ -963,7 +920,7 @@ class ApiProjectController extends Controller
                 'message' => 'A freelancer has requested project completion',
                 'type' => 'completion',
                 'link' => '/dashboard?tab=ongoing',
-                'reference_id' => $project->my_row_id ?? $project->id,
+                'reference_id' => $project->id,
             ]);
 
             DB::commit();
@@ -984,14 +941,11 @@ class ApiProjectController extends Controller
         DB::beginTransaction();
 
         try {
-            $application = Application::join('projects', function ($join) {
-                    $join->on('projects.id', '=', 'applications.project_id')
-                        ->orOn('projects.my_row_id', '=', 'applications.project_id');
-                })
+            $application = Application::join('projects', 'projects.id', '=', 'applications.project_id')
                 ->whereIn('applications.project_id', $candidateProjectIds)
                 ->where('projects.user_id', authId())
                 ->where('applications.status', 'Completion Requested')
-                ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
+                ->select('applications.*')
                 ->first();
 
             if (!$application) {
@@ -1000,9 +954,9 @@ class ApiProjectController extends Controller
 
             $appPk = $this->applicationPk($application);
 
-            // Use direct DB update to avoid INVISIBLE my_row_id column issues with Eloquent save()
+            // Use direct DB update to avoid INVISIBLE id column issues with Eloquent save()
             DB::table('applications')
-                ->where('my_row_id', $appPk)
+                ->where('id', $appPk)
                 ->update([
                     'status' => 'Completed',
                     'remark' => request()->remark,
@@ -1011,7 +965,7 @@ class ApiProjectController extends Controller
 
             // Update project status to completed
             DB::table('projects')
-                ->where('my_row_id', $project->my_row_id)
+                ->where('id', $project->id)
                 ->update([
                     'status' => 'completed',
                     'updated_at' => now(),
@@ -1050,7 +1004,7 @@ class ApiProjectController extends Controller
                 'message' => 'Project completion request has been accepted successfully',
                 'type' => 'completed',
                 'link' => '/dashboard?tab=completed',
-                'reference_id' => $project->my_row_id ?? $project->id,
+                'reference_id' => $project->id,
             ]);
 
             Notification::create([
@@ -1059,7 +1013,7 @@ class ApiProjectController extends Controller
                 'message' => 'Project completion request has been accepted successfully',
                 'type' => 'completed',
                 'link' => '/dashboard?tab=completed',
-                'reference_id' => $project->my_row_id ?? $project->id,
+                'reference_id' => $project->id,
             ]);
 
             DB::commit();
@@ -1077,11 +1031,8 @@ class ApiProjectController extends Controller
         try {
             $reqId = (int) $application_id;
 
-            // ✅ accept both (prefer my_row_id)
-            $application = Application::select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
-                ->where('my_row_id', $reqId)
-                ->orWhere('id', $reqId)
-                ->first();
+            // Get application by ID
+            $application = Application::find($reqId);
 
             if (!$application) {
                 return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
@@ -1089,9 +1040,9 @@ class ApiProjectController extends Controller
 
             $appPk = $this->applicationPk($application);
 
-            // Use direct DB update to avoid INVISIBLE my_row_id column issues with Eloquent save()
+            // Use direct DB update to avoid INVISIBLE id column issues with Eloquent save()
             DB::table('applications')
-                ->where('my_row_id', $appPk)
+                ->where('id', $appPk)
                 ->update([
                     'status' => 'Cancelled',
                     'cancel_reason' => request()->cancel_reason,
@@ -1127,9 +1078,7 @@ class ApiProjectController extends Controller
                 'reference_id' => $application->project_id,
             ]);
 
-            $proj = Project::where('id', $application->project_id)
-                ->orWhere('my_row_id', $application->project_id)
-                ->first();
+            $proj = Project::find($application->project_id);
 
             if ($proj) {
                 Notification::create([
@@ -1138,7 +1087,7 @@ class ApiProjectController extends Controller
                     'message' => 'A project completion was cancelled.',
                     'type' => 'cancelled',
                     'link' => '/dashboard?tab=ongoing',
-                    'reference_id' => $proj->my_row_id ?? $proj->id,
+                    'reference_id' => $proj->id,
                 ]);
             }
 

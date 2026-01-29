@@ -12,7 +12,7 @@ use DB;
 class Language extends Model
 {
     /**
-     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in foreign keys.
+     * NOTE: Table has INVISIBLE id, but 'id' is used in foreign keys.
      */
     protected $guarded = [];
     protected $table = 'programming_languages';

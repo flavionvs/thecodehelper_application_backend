@@ -12,7 +12,7 @@ use DB;
 class Technology extends Model
 {
     /**
-     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in foreign keys.
+     * NOTE: Table has INVISIBLE id, but 'id' is used in foreign keys.
      */
     protected $guarded = [];
     public function insertUpdate($request, $id = null){      

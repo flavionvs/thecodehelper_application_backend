@@ -12,14 +12,6 @@ class Project extends Model
 {
     use HasFactory;
 
-    /**
-     * Production DB primary key is my_row_id (AUTO_INCREMENT).
-     * Eloquent must use that as the primary key.
-     */
-    protected $primaryKey = 'my_row_id';
-    public $incrementing = true;
-    protected $keyType = 'int';
-
     protected $guarded = [];
 
     /**
@@ -28,28 +20,11 @@ class Project extends Model
      */
     protected $appends = ['approved_freelancer_id'];
 
-    /**
-     * Boot method - sync id with my_row_id on create.
-     */
-    protected static function booted()
-    {
-        // After creating a project, sync id = my_row_id for backward compatibility
-        static::created(function ($model) {
-            if (empty($model->id) || (int)$model->id === 0) {
-                \DB::table('projects')
-                    ->where('my_row_id', $model->my_row_id)
-                    ->update(['id' => $model->my_row_id]);
-                $model->id = $model->my_row_id;
-            }
-        });
-    }
-
     public function insertUpdate($request, $id = null)
     {
         $req = request()->except('_token', '_method');
 
         if (!empty($id)) {
-            // $id is the business id (projects.id) used in URLs/joins
             $q = Project::withoutGlobalScope(new ActiveScope)->where('id', $id);
 
             if (!$q->exists()) {
@@ -68,38 +43,23 @@ class Project extends Model
 
         $data = Project::create($req);
 
-        // ALWAYS bridge: keep legacy joins stable (applications.project_id -> projects.id)
-        DB::table('projects')
-            ->where('my_row_id', $data->my_row_id)
-            ->update(['id' => $data->my_row_id]);
-
-        // Ensure in-memory model also reflects the legacy business id
-        $data->id = $data->my_row_id;
-
         return ['status' => true];
     }
 
     /**
      * Get applications for this project.
-     * 
-     * IMPORTANT: applications.project_id may reference either projects.id or projects.my_row_id
-     * Since projects.id is 0 for newer records but my_row_id is always valid,
-     * we use a custom query that matches both.
      */
     public function application()
     {
-        // Use my_row_id as the foreign key since it's always the real primary key
-        return $this->hasMany(Application::class, 'project_id', 'my_row_id');
+        return $this->hasMany(Application::class, 'project_id', 'id');
     }
 
     /**
-     * Alternative method to get application count that handles the id/my_row_id issue
+     * Get application count
      */
     public function getApplicationCountAttribute()
     {
-        return Application::where('project_id', $this->my_row_id)
-            ->orWhere('project_id', $this->id)
-            ->count();
+        return Application::where('project_id', $this->id)->count();
     }
 
     public function user()
@@ -113,17 +73,11 @@ class Project extends Model
     }
 
     /**
-     * IMPORTANT:
-     * Applications primary key is now `my_row_id` (see Application model fix).
-     * Also note: application.status values appear to be "Approved" with capital A.
-     * Check both id and my_row_id since applications.project_id may reference either.
+     * Get approved freelancer ID for this project.
      */
     public function getApprovedFreelancerIdAttribute()
     {
-        $application = Application::where(function($q) {
-                $q->where('project_id', $this->my_row_id)
-                  ->orWhere('project_id', $this->id);
-            })
+        $application = Application::where('project_id', $this->id)
             ->where('status', 'Approved')
             ->first();
 
@@ -135,19 +89,13 @@ class Project extends Model
         $data = DB::table('projects')
             ->join('users', 'users.id', 'projects.user_id')
             ->join('categories', 'categories.id', 'projects.category_id')
-            ->leftJoin('applications', function($join) {
-                // Match applications.project_id to either projects.id or projects.my_row_id
-                $join->on('applications.project_id', '=', 'projects.my_row_id')
-                     ->orOn('applications.project_id', '=', 'projects.id');
-            })
-            ->groupBy('projects.my_row_id')
+            ->leftJoin('applications', 'applications.project_id', '=', 'projects.id')
+            ->groupBy('projects.id')
             ->select(
                 'projects.*',
-                DB::raw('projects.my_row_id as id'),  // Use my_row_id as the display id
                 'categories.name as category',
                 'users.first_name as client',
-                // applications.my_row_id is the real PK; using COUNT(applications.id) can return 0
-                DB::raw('COUNT(applications.my_row_id) as application')
+                DB::raw('COUNT(applications.id) as application')
             );
 
         if (request()->category) {
@@ -220,16 +168,9 @@ class Project extends Model
             ->editColumn('user_id', '{{$username}}')
             ->editColumn('project_id', '{{$project}}')
             ->editColumn('attachment', function ($data) {
-                /**
-                 * IMPORTANT:
-                 * application_attachments.application_id should reference applications.my_row_id.
-                 * Since the datatable query selects "applications.*", we have $data->my_row_id available.
-                 */
-                $applicationPk = $data->my_row_id ?? $data->id ?? null;
-
-                $attachments = $applicationPk
-                    ? DB::table('application_attachments')->where('application_id', $applicationPk)->get()
-                    : collect();
+                $attachments = DB::table('application_attachments')
+                    ->where('application_id', $data->id)
+                    ->get();
 
                 $links = '';
 

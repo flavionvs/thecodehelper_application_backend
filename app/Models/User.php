@@ -17,7 +17,7 @@ class User extends Authenticatable implements JWTSubject
     use HasApiTokens, HasFactory, Notifiable, HasRoles;
 
     /**
-     * NOTE: users table has INVISIBLE my_row_id as DB primary key,
+     * NOTE: users table has INVISIBLE id as DB primary key,
      * but we use 'id' column as the logical identifier throughout
      * the application (foreign keys, JWT, etc.).
      * Keep default primaryKey = 'id' for backward compatibility.

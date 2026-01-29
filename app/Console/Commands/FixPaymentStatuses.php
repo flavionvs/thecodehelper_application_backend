@@ -56,8 +56,8 @@ class FixPaymentStatuses extends Command
             $this->line('');
             $this->info("Checking Payment #{$payment->id} (Intent: {$payment->paymentIntentId})");
 
-            // Find application by my_row_id OR id
-            $application = Application::where('my_row_id', $payment->application_id)
+            // Find application by id OR id
+            $application = Application::where('id', $payment->application_id)
                 ->orWhere('id', $payment->application_id)
                 ->first();
 
@@ -67,11 +67,11 @@ class FixPaymentStatuses extends Command
                 continue;
             }
 
-            $this->line("  Application #{$application->my_row_id} - Current status: {$application->status}");
+            $this->line("  Application #{$application->id} - Current status: {$application->status}");
 
             // Find project
             $project = Project::where('id', $application->project_id)
-                ->orWhere('my_row_id', $application->project_id)
+                ->orWhere('id', $application->project_id)
                 ->first();
 
             if (!$project) {
@@ -107,7 +107,7 @@ class FixPaymentStatuses extends Command
             }
 
             // Check if selected_application_id is set
-            $appPk = $application->my_row_id ?: $application->id;
+            $appPk = $application->id ?: $application->id;
             if (!$project->selected_application_id || $project->selected_application_id != $appPk) {
                 $needsFix = true;
                 $changes[] = "Project selected_application_id: {$project->selected_application_id} → {$appPk}";
@@ -129,7 +129,7 @@ class FixPaymentStatuses extends Command
                     DB::transaction(function () use ($application, $project, $appPk) {
                         // Fix application status
                         if ($application->status === 'Pending') {
-                            Application::where('my_row_id', $application->my_row_id)->update([
+                            Application::where('id', $application->id)->update([
                                 'status' => 'Approved',
                             ]);
                         }
@@ -148,7 +148,7 @@ class FixPaymentStatuses extends Command
 
                     Log::info('[FixPaymentStatuses] Fixed payment status', [
                         'payment_id' => $payment->id,
-                        'application_id' => $application->my_row_id,
+                        'application_id' => $application->id,
                         'project_id' => $project->id,
                     ]);
                 } catch (\Exception $e) {

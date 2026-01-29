@@ -35,10 +35,10 @@ class ApiController extends Controller
 {
     /**
      * IMPORTANT NOTE (Jan 2026):
-     * - applications table primary key is my_row_id (AUTO_INCREMENT, but INVISIBLE).
+     * - applications table primary key is id (AUTO_INCREMENT, but INVISIBLE).
      * - applications.id is NOT auto-increment and is coming as 0 for new rows.
-     * - Therefore payment + selection must use my_row_id for new applications.
-     * - We keep backward compatibility by trying my_row_id first, then id.
+     * - Therefore payment + selection must use id for new applications.
+     * - We keep backward compatibility by trying id first, then id.
      */
 
     private function findApplicationByAnyId($id)
@@ -46,11 +46,11 @@ class ApiController extends Controller
         $id = is_numeric($id) ? (int) $id : 0;
         if ($id <= 0) return null;
 
-        // Because my_row_id is INVISIBLE, selecting applications.* will not include it.
+        // Because id is INVISIBLE, selecting applications.* will not include it.
         // So we explicitly select it.
         return Application::query()
-            ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
-            ->where('applications.my_row_id', $id)
+            ->select('applications.*', DB::raw('applications.id as id'))
+            ->where('applications.id', $id)
             ->orWhere('applications.id', $id) // backward compatibility (older records)
             ->first();
     }
@@ -274,7 +274,7 @@ class ApiController extends Controller
             foreach ($project as $item) {
 
                 // ✅ Determine IDs safely
-                $routeId = $item->my_row_id ?? null;
+                $routeId = $item->id ?? null;
                 if (!$routeId) {
                     $routeId = $item->id ?? null;
                 }
@@ -427,12 +427,12 @@ class ApiController extends Controller
             /**
              * ✅ KEY FIX:
              * - New applications have applications.id = 0 (not auto increment)
-             * - Real PK is applications.my_row_id (auto increment, but INVISIBLE)
-             * - Therefore: lookup by my_row_id first, then id for backward compatibility
+             * - Real PK is applications.id (auto increment, but INVISIBLE)
+             * - Therefore: lookup by id first, then id for backward compatibility
              */
             $apps = $this->findApplicationByAnyId($appId);
             if (!$apps) {
-                \Log::error('Invalid application id for payment (not found by my_row_id or id)', ['appId' => $appId]);
+                \Log::error('Invalid application id for payment (not found by id or id)', ['appId' => $appId]);
                 return response()->json([
                     'status'  => false,
                     'message' => 'Invalid application id.'
@@ -443,7 +443,7 @@ class ApiController extends Controller
             if (empty($apps->project_id) || (int) $apps->project_id === 0) {
                 \Log::error('Application missing project_id', [
                     'application_lookup_id' => $appId,
-                    'application_my_row_id' => $apps->my_row_id ?? null,
+                    'application_id' => $apps->id ?? null,
                     'application_id'        => $apps->id ?? null,
                     'project_id'            => $apps->project_id
                 ]);
@@ -459,7 +459,7 @@ class ApiController extends Controller
             if ($amountCents <= 0) {
                 \Log::error('Invalid amount calculated for payment', [
                     'application_lookup_id' => $appId,
-                    'application_my_row_id' => $apps->my_row_id ?? null,
+                    'application_id' => $apps->id ?? null,
                     'application_id'        => $apps->id ?? null,
                     'total_amount'          => $apps->total_amount,
                     'amount_cents'          => $amountCents,
@@ -472,7 +472,7 @@ class ApiController extends Controller
 
             \Log::info('Creating Stripe payment', [
                 'application_lookup_id' => $appId,
-                'application_my_row_id' => $apps->my_row_id ?? null,
+                'application_id' => $apps->id ?? null,
                 'application_id'        => $apps->id ?? null,
                 'project_id'            => $apps->project_id,
                 'total_amount'          => $apps->total_amount,
@@ -481,20 +481,20 @@ class ApiController extends Controller
 
             /**
              * IMPORTANT:
-             * We store my_row_id as the "application_id" in Stripe metadata (and in payments table),
+             * We store id as the "application_id" in Stripe metadata (and in payments table),
              * because that is the only stable unique identifier for new applications.
              */
-            $stableAppId = (int) ($apps->my_row_id ?? 0);
+            $stableAppId = (int) ($apps->id ?? 0);
             if ($stableAppId <= 0) {
-                // Fallback to old id only if my_row_id wasn't selected for some reason
+                // Fallback to old id only if id wasn't selected for some reason
                 $stableAppId = (int) ($apps->id ?? 0);
             }
 
             if ($stableAppId <= 0) {
-                \Log::error('Application has no usable identifier (my_row_id and id are empty)', [
+                \Log::error('Application has no usable identifier (id and id are empty)', [
                     'application_lookup_id' => $appId,
                     'apps' => [
-                        'my_row_id' => $apps->my_row_id ?? null,
+                        'id' => $apps->id ?? null,
                         'id'        => $apps->id ?? null,
                     ],
                 ]);
@@ -512,9 +512,9 @@ class ApiController extends Controller
 
                 // ✅ REQUIRED for webhook finalization (even if you finalize in payment(), keep metadata)
                 'metadata' => [
-                    // Store stable id (my_row_id) here
+                    // Store stable id (id) here
                     'application_id'        => (string) $stableAppId,
-                    'application_my_row_id' => (string) ($apps->my_row_id ?? ''),
+                    'application_id' => (string) ($apps->id ?? ''),
                     'application_legacy_id' => (string) ($apps->id ?? ''),
                     'project_id'            => (string) $apps->project_id,
                     'user_id'               => (string) auth()->id(),
@@ -534,17 +534,17 @@ class ApiController extends Controller
                 try {
                     DB::transaction(function () use ($apps, $stableAppId, $intentId, $paymentIntent, $amountUsd) {
 
-                        // Find project by id OR my_row_id (safe)
+                        // Find project by id OR id (safe)
                         $project = Project::query()
                             ->where('id', (int)$apps->project_id)
-                            ->orWhere('my_row_id', (int)$apps->project_id)
+                            ->orWhere('id', (int)$apps->project_id)
                             ->lockForUpdate()
                             ->first();
 
                         if (!$project) {
                             \Log::warning('Payment succeeded but project not found for finalization', [
                                 'project_lookup_id' => $apps->project_id ?? null,
-                                'application_my_row_id' => $apps->my_row_id ?? null,
+                                'application_id' => $apps->id ?? null,
                                 'application_id' => $apps->id ?? null,
                                 'intent' => $intentId,
                             ]);
@@ -570,9 +570,9 @@ class ApiController extends Controller
                         }
 
                         // Update application status
-                        $appMyRowId = (int)($apps->my_row_id ?? 0);
+                        $appMyRowId = (int)($apps->id ?? 0);
                         if ($appMyRowId > 0) {
-                            Application::where('my_row_id', $appMyRowId)->update([
+                            Application::where('id', $appMyRowId)->update([
                                 'status' => 'Approved',
                             ]);
                         }
@@ -592,7 +592,7 @@ class ApiController extends Controller
                                 'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
                                 'type' => 'project',
                                 'link' => '/dashboard?tab=ongoing',
-                                'reference_id' => $project->my_row_id ?? $project->id,
+                                'reference_id' => $project->id ?? $project->id,
                             ]);
 
                             // Notify the client that payment succeeded
@@ -602,7 +602,7 @@ class ApiController extends Controller
                                 'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
                                 'type' => 'project',
                                 'link' => '/dashboard?tab=ongoing',
-                                'reference_id' => $project->my_row_id ?? $project->id,
+                                'reference_id' => $project->id ?? $project->id,
                             ]);
                         } catch (\Throwable $notifyError) {
                             \Log::error('Payment notification failed', [
@@ -614,14 +614,14 @@ class ApiController extends Controller
                         \Log::info('Payment finalized: project flipped to in_progress + paid', [
                             'intent' => $intentId,
                             'project_id' => $project->id ?? null,
-                            'project_my_row_id' => $project->my_row_id ?? null,
+                            'project_id' => $project->id ?? null,
                             'selected_application_id' => $project->selected_application_id ?? null,
                         ]);
                     });
                 } catch (\Throwable $e) {
                     \Log::error('Payment succeeded but DB finalization failed', [
                         'intent' => $intentId,
-                        'application_my_row_id' => $apps->my_row_id ?? null,
+                        'application_id' => $apps->id ?? null,
                         'application_id' => $apps->id ?? null,
                         'project_id' => $apps->project_id ?? null,
                         'error' => $e->getMessage(),
@@ -713,7 +713,7 @@ class ApiController extends Controller
 
                 /**
                  * ✅ KEY FIX:
-                 * payments.application_id may now store applications.my_row_id (stable) for new records
+                 * payments.application_id may now store applications.id (stable) for new records
                  * and may store applications.id for old records.
                  */
                 $application = $this->findApplicationByAnyId($item->application_id);
@@ -856,7 +856,7 @@ class ApiController extends Controller
             }
         }
 
-        // Diagnostic: List tables with my_row_id column (INVISIBLE primary key issue)
+        // Diagnostic: List tables with id column (INVISIBLE primary key issue)
         if ($request->boolean('diagnose_tables', false)) {
             try {
                 $tables = DB::select("SHOW TABLES");
@@ -866,11 +866,11 @@ class ApiController extends Controller
                 foreach ($tables as $table) {
                     $tableName = $table->{"Tables_in_{$dbName}"} ?? array_values((array)$table)[0];
                     
-                    // Check for my_row_id column using SHOW COLUMNS with FULL to see INVISIBLE columns
+                    // Check for id column using SHOW COLUMNS with FULL to see INVISIBLE columns
                     $columns = DB::select("SHOW FULL COLUMNS FROM `{$tableName}`");
                     
                     foreach ($columns as $column) {
-                        if ($column->Field === 'my_row_id') {
+                        if ($column->Field === 'id') {
                             // Check if it's the primary key
                             $isPrimary = $column->Key === 'PRI';
                             $isInvisible = strpos($column->Extra ?? '', 'INVISIBLE') !== false 
@@ -890,9 +890,9 @@ class ApiController extends Controller
                 
                 return response()->json([
                     'status' => true,
-                    'message' => 'Found ' . count($tablesWithMyRowId) . ' tables with my_row_id column',
-                    'tables_with_my_row_id' => $tablesWithMyRowId,
-                    'fix_required' => 'Update Eloquent models to set protected $primaryKey = "my_row_id"',
+                    'message' => 'Found ' . count($tablesWithMyRowId) . ' tables with id column',
+                    'tables_with_id' => $tablesWithMyRowId,
+                    'fix_required' => 'Update Eloquent models to set protected $primaryKey = "id"',
                 ]);
             } catch (\Exception $e) {
                 return response()->json([
@@ -911,7 +911,7 @@ class ApiController extends Controller
                 foreach ($tablesToCheck as $table) {
                     try {
                         // Check if table has id column and if any have id=0
-                        $sample = DB::select("SELECT my_row_id, id FROM `{$table}` LIMIT 5");
+                        $sample = DB::select("SELECT id, id FROM `{$table}` LIMIT 5");
                         $zeroIds = DB::select("SELECT COUNT(*) as cnt FROM `{$table}` WHERE id = 0 OR id IS NULL");
                         $totalCount = DB::select("SELECT COUNT(*) as cnt FROM `{$table}`");
                         
@@ -928,7 +928,7 @@ class ApiController extends Controller
                 
                 return response()->json([
                     'status' => true,
-                    'message' => 'Tables with id=0 issues need my_row_id as primaryKey in Eloquent',
+                    'message' => 'Tables with id=0 issues need id as primaryKey in Eloquent',
                     'table_analysis' => $results,
                 ]);
             } catch (\Exception $e) {
@@ -939,7 +939,7 @@ class ApiController extends Controller
             }
         }
 
-        // PERMANENT FIX: Sync id = my_row_id for ALL tables
+        // PERMANENT FIX: Sync id = id for ALL tables
         if ($request->boolean('sync_all_ids', false)) {
             try {
                 $tables = ['projects', 'applications', 'payments', 'notifications', 'messages'];
@@ -947,8 +947,8 @@ class ApiController extends Controller
                 
                 foreach ($tables as $table) {
                     try {
-                        // Update id = my_row_id where id is 0 or NULL
-                        $updated = DB::update("UPDATE `{$table}` SET id = my_row_id WHERE id = 0 OR id IS NULL");
+                        // Update id = id where id is 0 or NULL
+                        $updated = DB::update("UPDATE `{$table}` SET id = id WHERE id = 0 OR id IS NULL");
                         $results[$table] = ['fixed' => $updated, 'status' => 'ok'];
                     } catch (\Exception $e) {
                         $results[$table] = ['error' => $e->getMessage()];
@@ -957,7 +957,7 @@ class ApiController extends Controller
                 
                 return response()->json([
                     'status' => true,
-                    'message' => 'Synced id = my_row_id for all tables',
+                    'message' => 'Synced id = id for all tables',
                     'results' => $results,
                 ]);
             } catch (\Exception $e) {
@@ -975,8 +975,8 @@ class ApiController extends Controller
                 
                 if ($projectId) {
                     // Specific project debug
-                    $project = DB::select("SELECT my_row_id, id, title, user_id FROM projects WHERE my_row_id = ? OR id = ? LIMIT 1", [$projectId, $projectId]);
-                    $apps = DB::select("SELECT my_row_id, id, project_id, status, user_id FROM applications WHERE project_id = ?", [$projectId]);
+                    $project = DB::select("SELECT id, id, title, user_id FROM projects WHERE id = ? OR id = ? LIMIT 1", [$projectId, $projectId]);
+                    $apps = DB::select("SELECT id, id, project_id, status, user_id FROM applications WHERE project_id = ?", [$projectId]);
                     
                     return response()->json([
                         'status' => true,
@@ -986,14 +986,14 @@ class ApiController extends Controller
                     ]);
                 }
                 
-                $projectsData = DB::select("SELECT my_row_id, id, title FROM projects LIMIT 10");
-                $applicationsData = DB::select("SELECT my_row_id, id, project_id, status FROM applications LIMIT 20");
+                $projectsData = DB::select("SELECT id, id, title FROM projects LIMIT 10");
+                $applicationsData = DB::select("SELECT id, id, project_id, status FROM applications LIMIT 20");
                 
                 $countsByProject = [];
                 foreach ($projectsData as $p) {
-                    $count = DB::select("SELECT COUNT(*) as cnt FROM applications WHERE project_id = ? OR project_id = ?", [$p->my_row_id, $p->id]);
+                    $count = DB::select("SELECT COUNT(*) as cnt FROM applications WHERE project_id = ? OR project_id = ?", [$p->id, $p->id]);
                     $countsByProject[] = [
-                        'project_my_row_id' => $p->my_row_id,
+                        'project_id' => $p->id,
                         'project_id' => $p->id,
                         'title' => $p->title,
                         'application_count' => $count[0]->cnt ?? 0,
@@ -1018,19 +1018,19 @@ class ApiController extends Controller
         if ($request->boolean('fix_completed_projects', false)) {
             try {
                 // Find all applications with status "Completed" 
-                // Use raw query to get my_row_id which is INVISIBLE
-                $completedApps = DB::select("SELECT *, my_row_id FROM applications WHERE status = 'Completed'");
+                // Use raw query to get id which is INVISIBLE
+                $completedApps = DB::select("SELECT *, id FROM applications WHERE status = 'Completed'");
                 
                 $fixed = [];
                 $alreadyOk = [];
                 $notFound = [];
                 
                 foreach ($completedApps as $app) {
-                    // Find the project - use raw query to get my_row_id which is INVISIBLE
-                    $projects = DB::select("SELECT *, my_row_id FROM projects WHERE my_row_id = ? OR id = ? LIMIT 1", [$app->project_id, $app->project_id]);
+                    // Find the project - use raw query to get id which is INVISIBLE
+                    $projects = DB::select("SELECT *, id FROM projects WHERE id = ? OR id = ? LIMIT 1", [$app->project_id, $app->project_id]);
                     
                     if (empty($projects)) {
-                        $notFound[] = ['app_id' => $app->my_row_id, 'project_id' => $app->project_id];
+                        $notFound[] = ['app_id' => $app->id, 'project_id' => $app->project_id];
                         continue;
                     }
                     
@@ -1038,7 +1038,7 @@ class ApiController extends Controller
                     
                     if ($project->status === 'completed') {
                         $alreadyOk[] = [
-                            'project_id' => $project->my_row_id,
+                            'project_id' => $project->id,
                             'title' => $project->title,
                         ];
                         continue;
@@ -1046,14 +1046,14 @@ class ApiController extends Controller
                     
                     // Update project status to completed
                     DB::table('projects')
-                        ->where('my_row_id', $project->my_row_id)
+                        ->where('id', $project->id)
                         ->update([
                             'status' => 'completed',
                             'updated_at' => now(),
                         ]);
                     
                     $fixed[] = [
-                        'project_id' => $project->my_row_id,
+                        'project_id' => $project->id,
                         'title' => $project->title,
                         'old_status' => $project->status,
                         'new_status' => 'completed',
@@ -1103,10 +1103,10 @@ class ApiController extends Controller
                 'status' => 'ok',
             ];
 
-            // Find application by my_row_id OR id
+            // Find application by id OR id
             $application = Application::query()
-                ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
-                ->where('applications.my_row_id', $payment->application_id)
+                ->select('applications.*', DB::raw('applications.id as id'))
+                ->where('applications.id', $payment->application_id)
                 ->orWhere('applications.id', $payment->application_id)
                 ->first();
 
@@ -1118,14 +1118,14 @@ class ApiController extends Controller
                 continue;
             }
 
-            $detail['application_id'] = $application->my_row_id ?? $application->id;
+            $detail['application_id'] = $application->id ?? $application->id;
 
-            // Find project - use raw SQL to ensure we get my_row_id even if it's INVISIBLE
+            // Find project - use raw SQL to ensure we get id even if it's INVISIBLE
             $projectId = $application->project_id;
             $project = DB::selectOne("
-                SELECT *, my_row_id 
+                SELECT *, id 
                 FROM projects 
-                WHERE id = ? OR my_row_id = ?
+                WHERE id = ? OR id = ?
                 LIMIT 1
             ", [$projectId, $projectId]);
 
@@ -1138,7 +1138,7 @@ class ApiController extends Controller
             }
 
             $detail['project_id'] = $project->id;
-            $detail['project_my_row_id'] = $project->my_row_id;
+            $detail['project_id'] = $project->id;
             $detail['project_title'] = $project->title;
 
             $needsFix = false;
@@ -1162,7 +1162,7 @@ class ApiController extends Controller
             }
 
             // Check if selected_application_id is set
-            $appPk = $application->my_row_id ?: $application->id;
+            $appPk = $application->id ?: $application->id;
             if (!$project->selected_application_id || $project->selected_application_id != $appPk) {
                 $needsFix = true;
                 $detail['changes'][] = "Project selected_application_id: {$project->selected_application_id} → {$appPk}";
@@ -1181,9 +1181,9 @@ class ApiController extends Controller
                     // Log the IDs we're using for update
                     \Log::info('[FixPaymentStatuses] About to fix', [
                         'payment_id' => $payment->id,
-                        'app_my_row_id' => $application->my_row_id,
+                        'app_id' => $application->id,
                         'project_id' => $project->id,
-                        'project_my_row_id' => $project->my_row_id,
+                        'project_id' => $project->id,
                         'appPk' => $appPk,
                     ]);
 
@@ -1191,7 +1191,7 @@ class ApiController extends Controller
                         // Fix application status
                         if ($application->status === 'Pending') {
                             $affectedApp = DB::table('applications')
-                                ->where('my_row_id', $application->my_row_id)
+                                ->where('id', $application->id)
                                 ->update(['status' => 'Approved']);
                             \Log::info('[FixPaymentStatuses] Application update affected rows: ' . $affectedApp);
                         }
@@ -1205,16 +1205,16 @@ class ApiController extends Controller
                             $updateData['status'] = 'in_progress';
                         }
                         
-                        // Update by my_row_id (the actual primary key)
+                        // Update by id (the actual primary key)
                         $affectedProj = DB::table('projects')
-                            ->where('my_row_id', $project->my_row_id)
+                            ->where('id', $project->id)
                             ->update($updateData);
-                        \Log::info('[FixPaymentStatuses] Project update affected rows: ' . $affectedProj . ' for my_row_id: ' . $project->my_row_id);
+                        \Log::info('[FixPaymentStatuses] Project update affected rows: ' . $affectedProj . ' for id: ' . $project->id);
                     });
 
                     \Log::info('[FixPaymentStatuses] Fixed via API', [
                         'payment_id' => $payment->id,
-                        'application_id' => $application->my_row_id,
+                        'application_id' => $application->id,
                         'project_id' => $project->id,
                     ]);
                 } catch (\Exception $e) {
@@ -1295,10 +1295,10 @@ class ApiController extends Controller
             ], 401);
         }
 
-        // Use DB::table to get raw results including my_row_id as id
+        // Use DB::table to get raw results including id as id
         $notifications = DB::table('notifications')
             ->select([
-                'my_row_id as id',  // Return my_row_id as id for API consistency
+                'id as id',  // Return id as id for API consistency
                 'user_id',
                 'title',
                 'message',
@@ -1333,9 +1333,9 @@ class ApiController extends Controller
             ], 401);
         }
 
-        // Use my_row_id as the primary key
+        // Use id as the primary key
         $deleted = DB::table('notifications')
-            ->where('my_row_id', $id)
+            ->where('id', $id)
             ->where('user_id', $user->id)
             ->delete();
 

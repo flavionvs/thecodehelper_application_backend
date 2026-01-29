@@ -49,8 +49,8 @@ class StripeWebhookController extends Controller
             $intentId = $intent->id ?? null;
 
             // Metadata written by ApiController@payment()
-            $appId     = $intent->metadata->application_id ?? null; // stable (my_row_id)
-            $projectId = $intent->metadata->project_id ?? null;      // may be projects.id OR my_row_id
+            $appId     = $intent->metadata->application_id ?? null; // stable (id)
+            $projectId = $intent->metadata->project_id ?? null;      // may be projects.id OR id
             $userId    = $intent->metadata->user_id ?? null;
 
             if (!$appId || !is_numeric($appId) || (int)$appId <= 0) {
@@ -63,10 +63,10 @@ class StripeWebhookController extends Controller
 
             $appIdInt = (int) $appId;
 
-            // Find Application by my_row_id first, then legacy id (backward compat).
+            // Find Application by id first, then legacy id (backward compat).
             $application = Application::query()
-                ->select('applications.*', DB::raw('applications.my_row_id as my_row_id'))
-                ->where('applications.my_row_id', $appIdInt)
+                ->select('applications.*', DB::raw('applications.id as id'))
+                ->where('applications.id', $appIdInt)
                 ->orWhere('applications.id', $appIdInt)
                 ->first();
 
@@ -87,7 +87,7 @@ class StripeWebhookController extends Controller
             if ($finalProjectLookupId <= 0) {
                 Log::warning('[StripeWebhook] No usable project id (ignored)', [
                     'intent' => $intentId,
-                    'application_my_row_id' => $application->my_row_id ?? null,
+                    'application_id' => $application->id ?? null,
                     'application_project_id' => $application->project_id ?? null,
                 ]);
                 return response()->json(['received' => true], 200);
@@ -110,10 +110,10 @@ class StripeWebhookController extends Controller
                     $finalUserId,
                     $amount
                 ) {
-                    // Find project by id OR my_row_id (critical)
+                    // Find project by id OR id (critical)
                     $project = Project::query()
                         ->where('id', $finalProjectLookupId)
-                        ->orWhere('my_row_id', $finalProjectLookupId)
+                        ->orWhere('id', $finalProjectLookupId)
                         ->lockForUpdate()
                         ->first();
 
@@ -121,7 +121,7 @@ class StripeWebhookController extends Controller
                         Log::warning('[StripeWebhook] Project not found (ignored)', [
                             'intent' => $intentId,
                             'project_lookup_id' => $finalProjectLookupId,
-                            'application_my_row_id' => $application->my_row_id ?? null,
+                            'application_id' => $application->id ?? null,
                         ]);
                         return;
                     }
@@ -136,7 +136,7 @@ class StripeWebhookController extends Controller
 
                         Payment::create([
                             'user_id'        => $payerId,                 // no auth() in webhook
-                            'application_id' => $appIdInt,                 // stable my_row_id
+                            'application_id' => $appIdInt,                 // stable id
                             'amount'         => number_format((float)$amount, 2, '.', ''),
                             'paymentIntentId'=> $intentId,
                             'paymentStatus'  => $intent->status ?? 'succeeded',
@@ -152,7 +152,7 @@ class StripeWebhookController extends Controller
 
                     // Update application status (only if not already)
                     if (($application->status ?? null) !== 'Approved') {
-                        Application::where('my_row_id', $application->my_row_id)->update([
+                        Application::where('id', $application->id)->update([
                             'status' => 'Approved',
                         ]);
                     }
@@ -161,7 +161,7 @@ class StripeWebhookController extends Controller
                     $project->payment_status = 'paid';
                     $project->status = 'in_progress';
 
-                    // Store stable selected_application_id as my_row_id
+                    // Store stable selected_application_id as id
                     $project->selected_application_id = $appIdInt;
 
                     $project->save();
@@ -175,7 +175,7 @@ class StripeWebhookController extends Controller
                             'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
                             'type' => 'project',
                             'link' => '/dashboard?tab=ongoing',
-                            'reference_id' => $project->my_row_id ?? $project->id,
+                            'reference_id' => $project->id ?? $project->id,
                         ]);
 
                         // Notify the client that payment succeeded  
@@ -185,7 +185,7 @@ class StripeWebhookController extends Controller
                             'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
                             'type' => 'project',
                             'link' => '/dashboard?tab=ongoing',
-                            'reference_id' => $project->my_row_id ?? $project->id,
+                            'reference_id' => $project->id ?? $project->id,
                         ]);
                     } catch (\Throwable $notifyError) {
                         Log::error('[StripeWebhook] Notification failed', [
@@ -196,9 +196,9 @@ class StripeWebhookController extends Controller
 
                     Log::info('[StripeWebhook] Updated project + application after succeeded intent', [
                         'intent' => $intentId,
-                        'application_my_row_id' => $application->my_row_id ?? null,
+                        'application_id' => $application->id ?? null,
                         'project_id' => $project->id ?? null,
-                        'project_my_row_id' => $project->my_row_id ?? null,
+                        'project_id' => $project->id ?? null,
                     ]);
                 });
             } catch (\Throwable $e) {

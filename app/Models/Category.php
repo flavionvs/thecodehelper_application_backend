@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Cache;
 class Category extends Model
 {
     /**
-     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in foreign keys.
+     * NOTE: Table has INVISIBLE id, but 'id' is used in foreign keys.
      * Keep default primaryKey = 'id' for compatibility.
      */
     protected $guarded = [];

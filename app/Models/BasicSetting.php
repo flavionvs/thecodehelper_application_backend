@@ -9,6 +9,6 @@ use Storage;
 class BasicSetting extends Model
 {
     /**
-     * NOTE: Table has INVISIBLE my_row_id, but 'id' is used in application.
+     * NOTE: Table has INVISIBLE id, but 'id' is used in application.
      */
 }
