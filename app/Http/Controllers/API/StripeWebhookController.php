@@ -167,8 +167,8 @@ class StripeWebhookController extends Controller
                             'user_id' => $application->user_id, // Freelancer
                             'title' => 'Application Approved! 🎉',
                             'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
-                            'type' => 'project',
-                            'link' => '/dashboard?tab=ongoing',
+                            'type' => 'approved',
+                            'link' => '/user/project?type=ongoing',
                             'reference_id' => $project->id,
                         ]);
 
@@ -177,8 +177,8 @@ class StripeWebhookController extends Controller
                             'user_id' => $project->user_id, // Client
                             'title' => 'Payment Successful',
                             'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
-                            'type' => 'project',
-                            'link' => '/dashboard?tab=ongoing',
+                            'type' => 'payment',
+                            'link' => '/user/project?type=ongoing',
                             'reference_id' => $project->id,
                         ]);
                     } catch (\Throwable $notifyError) {

@@ -136,7 +136,22 @@ class ApiController extends Controller
         }
 
         $notificaiton = Notification::where('user_id', authId())->orderByDESC('id')->get();
-        return response()->json(['status' => true, 'message' => 'Success', 'data' => $data, 'projects' => $prjects, 'notification' => $notificaiton]);
+        
+        // Add read_at column if missing and get unread count
+        $this->ensureReadAtColumn();
+        $unreadCount = DB::table('notifications')
+            ->where('user_id', authId())
+            ->whereNull('read_at')
+            ->count();
+            
+        return response()->json([
+            'status' => true, 
+            'message' => 'Success', 
+            'data' => $data, 
+            'projects' => $prjects, 
+            'notification' => $notificaiton,
+            'unread_count' => $unreadCount
+        ]);
     }
 
     public function category()
@@ -555,8 +570,8 @@ class ApiController extends Controller
                                 'user_id' => $apps->user_id, // Freelancer who applied
                                 'title' => 'Application Approved! 🎉',
                                 'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
-                                'type' => 'project',
-                                'link' => '/dashboard?tab=ongoing',
+                                'type' => 'approved',
+                                'link' => '/user/project?type=ongoing',
                                 'reference_id' => $project->id,
                             ]);
 
@@ -565,8 +580,8 @@ class ApiController extends Controller
                                 'user_id' => $project->user_id, // Client who posted the project
                                 'title' => 'Payment Successful',
                                 'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
-                                'type' => 'project',
-                                'link' => '/dashboard?tab=ongoing',
+                                'type' => 'payment',
+                                'link' => '/user/project?type=ongoing',
                                 'reference_id' => $project->id,
                             ]);
                         } catch (\Throwable $notifyError) {
@@ -1241,16 +1256,20 @@ class ApiController extends Controller
             ], 401);
         }
 
+        // Add read_at column if it doesn't exist
+        $this->ensureReadAtColumn();
+
         // Use DB::table to get raw results including id as id
         $notifications = DB::table('notifications')
             ->select([
-                'id as id',  // Return id as id for API consistency
+                'id as id',
                 'user_id',
                 'title',
                 'message',
                 'type',
                 'link',
                 'reference_id',
+                'read_at',
                 'created_at',
                 'updated_at'
             ])
@@ -1259,15 +1278,62 @@ class ApiController extends Controller
             ->take(50)
             ->get();
 
+        $unreadCount = DB::table('notifications')
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->count();
+
         return response()->json([
             'status' => true,
             'message' => 'Notifications retrieved successfully',
-            'data' => $notifications
+            'data' => $notifications,
+            'unread_count' => $unreadCount
         ]);
     }
 
     /**
-     * Mark a notification as read (delete it)
+     * Get unread notification count
+     */
+    public function getUnreadNotificationCount(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $this->ensureReadAtColumn();
+
+        $count = DB::table('notifications')
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->count();
+
+        return response()->json([
+            'status' => true,
+            'count' => $count
+        ]);
+    }
+
+    /**
+     * Ensure read_at column exists in notifications table
+     */
+    private function ensureReadAtColumn()
+    {
+        try {
+            $columns = DB::select("SHOW COLUMNS FROM notifications LIKE 'read_at'");
+            if (empty($columns)) {
+                DB::statement("ALTER TABLE notifications ADD COLUMN `read_at` TIMESTAMP NULL DEFAULT NULL AFTER `reference_id`");
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to add read_at column: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Mark a notification as read
      */
     public function markNotificationRead(Request $request, $id)
     {
@@ -1279,22 +1345,23 @@ class ApiController extends Controller
             ], 401);
         }
 
-        // Use id as the primary key
-        $deleted = DB::table('notifications')
+        $this->ensureReadAtColumn();
+
+        $updated = DB::table('notifications')
             ->where('id', $id)
             ->where('user_id', $user->id)
-            ->delete();
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
 
-        if (!$deleted) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Notification not found'
-            ], 404);
-        }
+        $unreadCount = DB::table('notifications')
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->count();
 
         return response()->json([
             'status' => true,
-            'message' => 'Notification marked as read'
+            'message' => 'Notification marked as read',
+            'unread_count' => $unreadCount
         ]);
     }
 
@@ -1311,11 +1378,76 @@ class ApiController extends Controller
             ], 401);
         }
 
+        $this->ensureReadAtColumn();
+
+        $updated = DB::table('notifications')
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+
+        return response()->json([
+            'status' => true,
+            'message' => "Marked {$updated} notifications as read",
+            'unread_count' => 0
+        ]);
+    }
+
+    /**
+     * Delete a notification
+     */
+    public function deleteNotification(Request $request, $id)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $deleted = DB::table('notifications')
+            ->where('id', $id)
+            ->where('user_id', $user->id)
+            ->delete();
+
+        if (!$deleted) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Notification not found'
+            ], 404);
+        }
+
+        $unreadCount = DB::table('notifications')
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->count();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Notification deleted',
+            'unread_count' => $unreadCount
+        ]);
+    }
+
+    /**
+     * Delete all notifications for the authenticated user
+     */
+    public function deleteAllNotifications(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
         $deleted = Notification::where('user_id', $user->id)->delete();
 
         return response()->json([
             'status' => true,
-            'message' => "Marked {$deleted} notifications as read"
+            'message' => "Deleted {$deleted} notifications",
+            'unread_count' => 0
         ]);
     }
 }

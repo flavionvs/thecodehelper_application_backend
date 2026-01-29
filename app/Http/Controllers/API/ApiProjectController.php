@@ -536,7 +536,7 @@ class ApiProjectController extends Controller
                     'title' => 'New project application',
                     'message' => 'You have a new project application',
                     'type' => 'application',
-                    'link' => '/dashboard?tab=applications',
+                    'link' => '/user/project?type=applied',
                     'reference_id' => $storeProjectId,
                 ]);
 
@@ -545,7 +545,7 @@ class ApiProjectController extends Controller
                     'title' => 'You have a new project application.',
                     'message' => 'You have a new project application',
                     'type' => 'application',
-                    'link' => '/dashboard?tab=ongoing',
+                    'link' => '/user/applications/' . $storeProjectId,
                     'reference_id' => $storeProjectId,
                 ]);
             } catch (\Throwable $e) {
@@ -799,8 +799,8 @@ class ApiProjectController extends Controller
                     'user_id' => $applied->user_id,
                     'title' => 'Application approved',
                     'message' => 'Your application has been approved',
-                    'type' => 'project',
-                    'link' => '/dashboard?tab=ongoing',
+                    'type' => 'approved',
+                    'link' => '/user/project?type=ongoing',
                     'reference_id' => $proj->id,
                 ]);
 
@@ -808,8 +808,8 @@ class ApiProjectController extends Controller
                     'user_id' => $proj->user_id,
                     'title' => 'Payment received',
                     'message' => 'Project moved to in progress.',
-                    'type' => 'project',
-                    'link' => '/dashboard?tab=ongoing',
+                    'type' => 'payment',
+                    'link' => '/user/project?type=ongoing',
                     'reference_id' => $proj->id,
                 ]);
             } catch (\Throwable $e) {
@@ -909,7 +909,7 @@ class ApiProjectController extends Controller
                 'title' => 'Project completion request',
                 'message' => 'Project completion request sent successfully',
                 'type' => 'completion',
-                'link' => '/dashboard?tab=ongoing',
+                'link' => '/user/project?type=ongoing',
                 'reference_id' => $project->id,
             ]);
 
@@ -918,7 +918,7 @@ class ApiProjectController extends Controller
                 'title' => 'Project completion request',
                 'message' => 'A freelancer has requested project completion',
                 'type' => 'completion',
-                'link' => '/dashboard?tab=ongoing',
+                'link' => '/user/project?type=ongoing',
                 'reference_id' => $project->id,
             ]);
 
@@ -1002,7 +1002,7 @@ class ApiProjectController extends Controller
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
                 'type' => 'completed',
-                'link' => '/dashboard?tab=completed',
+                'link' => '/user/project?type=completed',
                 'reference_id' => $project->id,
             ]);
 
@@ -1011,7 +1011,7 @@ class ApiProjectController extends Controller
                 'title' => 'Project completion request accepted',
                 'message' => 'Project completion request has been accepted successfully',
                 'type' => 'completed',
-                'link' => '/dashboard?tab=completed',
+                'link' => '/user/project?type=completed',
                 'reference_id' => $project->id,
             ]);
 
@@ -1073,7 +1073,7 @@ class ApiProjectController extends Controller
                 'title' => 'Project completion cancelled',
                 'message' => 'Project completion has been cancelled.',
                 'type' => 'cancelled',
-                'link' => '/dashboard?tab=ongoing',
+                'link' => '/user/project?type=cancelled',
                 'reference_id' => $application->project_id,
             ]);
 
@@ -1085,7 +1085,7 @@ class ApiProjectController extends Controller
                     'title' => 'Project completion cancelled',
                     'message' => 'A project completion was cancelled.',
                     'type' => 'cancelled',
-                    'link' => '/dashboard?tab=ongoing',
+                    'link' => '/user/project?type=cancelled',
                     'reference_id' => $proj->id,
                 ]);
             }

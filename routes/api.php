@@ -75,8 +75,11 @@ Route::group(['middleware' => ['api']], function($router) {
 
         // Notification routes
         Route::get('notifications', 'API\ApiController@getNotifications');
-        Route::delete('notifications/{id}', 'API\ApiController@markNotificationRead');
-        Route::delete('notifications', 'API\ApiController@markAllNotificationsRead');
+        Route::get('notifications/unread-count', 'API\ApiController@getUnreadNotificationCount');
+        Route::post('notifications/{id}/read', 'API\ApiController@markNotificationRead');
+        Route::post('notifications/read-all', 'API\ApiController@markAllNotificationsRead');
+        Route::delete('notifications/{id}', 'API\ApiController@deleteNotification');
+        Route::delete('notifications', 'API\ApiController@deleteAllNotifications');
 
         Route::get('product/{product_id}', 'API\ApiController@productDetail');
         Route::post('add-to-cart/{product_id}', 'API\ApiController@addToCart');
