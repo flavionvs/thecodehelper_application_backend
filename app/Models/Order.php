@@ -177,9 +177,9 @@ class Order extends Model
                         $check = OrderAssign::whereId($data->id)->whereUserId(authId())->first();                        
                         if($check){
                             // checking for accepted
-                            $accpet = OrderAssign::where('order_service_id',$data->order_service_id)->where(function($q){
-                                            $q->whereStatus('Accepted')->orWhere('status','Accepted');
-                                        })->first();                            
+                            $accpet = OrderAssign::where('order_service_id',$data->order_service_id)
+                                        ->where('status', 'Accepted')
+                                        ->first();                            
                             if(!$accpet){
                                 if($check->status == 'Under Review'){
                                     $action[] = array('name' => 'Accept', 'link' => true, 'url' => url(guardName()."/order/accept", $data->id));                                        

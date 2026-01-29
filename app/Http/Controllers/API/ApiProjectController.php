@@ -32,15 +32,17 @@ class ApiProjectController extends Controller
             ], 404)];
         }
 
-        return [(int) $project->id, (int) $project->id, $project, null];
+        // Both businessId and routeId are now the same (id is the only PK)
+        $id = (int) $project->id;
+        return [$id, $id, $project, null];
     }
 
     private function projectIdCandidates($businessId, $routeId)
     {
-        $ids = [];
-        if (!empty($businessId)) $ids[] = (int) $businessId;
-        if (!empty($routeId)) $ids[] = (int) $routeId;
-        return array_values(array_unique($ids));
+        // Since businessId == routeId now, just return one value
+        if (!empty($businessId)) return [(int) $businessId];
+        if (!empty($routeId)) return [(int) $routeId];
+        return [];
     }
 
     /**
@@ -85,12 +87,9 @@ class ApiProjectController extends Controller
 
         $appProjectIds = $project_ids->pluck('applications.project_id')->toArray();
 
-        // Global scope in Project model handles selecting id
-        $project = Project::when($businessId || $routeId, function ($q) use ($businessId, $routeId) {
-                $q->where(function ($qq) use ($businessId, $routeId) {
-                    if ($businessId) $qq->orWhere('projects.id', $businessId);
-                    if ($routeId) $qq->orWhere('projects.id', $routeId);
-                });
+        // businessId and routeId are now always the same (just id)
+        $project = Project::when($businessId, function ($q) use ($businessId) {
+                $q->where('projects.id', $businessId);
             })
             ->when(request()->type != 'my-projects' && !$businessId && !$routeId, function ($q) use ($appProjectIds) {
                 if (!empty($appProjectIds)) {

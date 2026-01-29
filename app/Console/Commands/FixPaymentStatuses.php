@@ -56,10 +56,8 @@ class FixPaymentStatuses extends Command
             $this->line('');
             $this->info("Checking Payment #{$payment->id} (Intent: {$payment->paymentIntentId})");
 
-            // Find application by id OR id
-            $application = Application::where('id', $payment->application_id)
-                ->orWhere('id', $payment->application_id)
-                ->first();
+            // Find application by id
+            $application = Application::find($payment->application_id);
 
             if (!$application) {
                 $this->warn("  ⚠ Application #{$payment->application_id} not found - skipping");
@@ -70,9 +68,7 @@ class FixPaymentStatuses extends Command
             $this->line("  Application #{$application->id} - Current status: {$application->status}");
 
             // Find project
-            $project = Project::where('id', $application->project_id)
-                ->orWhere('id', $application->project_id)
-                ->first();
+            $project = Project::find($application->project_id);
 
             if (!$project) {
                 $this->warn("  ⚠ Project #{$application->project_id} not found - skipping");
@@ -107,7 +103,7 @@ class FixPaymentStatuses extends Command
             }
 
             // Check if selected_application_id is set
-            $appPk = $application->id ?: $application->id;
+            $appPk = $application->id;
             if (!$project->selected_application_id || $project->selected_application_id != $appPk) {
                 $needsFix = true;
                 $changes[] = "Project selected_application_id: {$project->selected_application_id} → {$appPk}";

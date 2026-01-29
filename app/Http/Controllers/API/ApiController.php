@@ -267,16 +267,10 @@ class ApiController extends Controller
             foreach ($project as $item) {
 
                 // ✅ Determine IDs safely
-                $routeId = $item->id ?? null;
-                if (!$routeId) {
-                    $routeId = $item->id ?? null;
-                }
+                $routeId = $item->id;
 
                 // ✅ Guarantee non-zero business id (frontend + applications rely on this)
-                $businessId = $item->id ?? null;
-                if (empty($businessId) || (int)$businessId === 0) {
-                    $businessId = $routeId; // fallback so frontend doesn't get "missing"
-                }
+                $businessId = $item->id;
 
                 // ✅ applied check uses business id (applications.project_id expects projects.id)
                 $applied = false;
@@ -573,7 +567,7 @@ class ApiController extends Controller
                                 'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
                                 'type' => 'project',
                                 'link' => '/dashboard?tab=ongoing',
-                                'reference_id' => $project->id ?? $project->id,
+                                'reference_id' => $project->id,
                             ]);
                         } catch (\Throwable $notifyError) {
                             \Log::error('Payment notification failed', [
@@ -1115,7 +1109,7 @@ class ApiController extends Controller
             }
 
             // Check if selected_application_id is set
-            $appPk = $application->id ?: $application->id;
+            $appPk = $application->id;
             if (!$project->selected_application_id || $project->selected_application_id != $appPk) {
                 $needsFix = true;
                 $detail['changes'][] = "Project selected_application_id: {$project->selected_application_id} → {$appPk}";
