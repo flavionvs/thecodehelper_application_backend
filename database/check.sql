@@ -1,1 +1,0 @@
-SELECT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'codehelper' AND COLUMN_NAME = 'my_row_id' ORDER BY TABLE_NAME;
