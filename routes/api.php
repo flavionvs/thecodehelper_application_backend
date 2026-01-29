@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Mail;
 
 
 
@@ -9,6 +10,30 @@ Route::group(['middleware' => ['api']], function($router) {
         // ✅ Stripe Webhook (NO auth, NO jwt)
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
+    
+    // Debug email endpoint - REMOVE AFTER TESTING
+    Route::get('test-email-debug', function() {
+        $config = [
+            'MAIL_MAILER' => env('MAIL_MAILER'),
+            'MAIL_HOST' => env('MAIL_HOST'),
+            'MAIL_PORT' => env('MAIL_PORT'),
+            'MAIL_USERNAME' => env('MAIL_USERNAME'),
+            'MAIL_PASSWORD' => env('MAIL_PASSWORD') ? 'SET (hidden)' : 'NOT SET',
+            'MAIL_ENCRYPTION' => env('MAIL_ENCRYPTION'),
+            'MAIL_FROM_ADDRESS' => env('MAIL_FROM_ADDRESS'),
+            'MAIL_FROM_NAME' => env('MAIL_FROM_NAME'),
+        ];
+        
+        try {
+            Mail::raw('Test email from The Code Helper - ' . date('Y-m-d H:i:s'), function ($message) {
+                $message->to('ranjanshrm07@gmail.com')
+                    ->subject('Test Email Debug');
+            });
+            return response()->json(['status' => true, 'message' => 'Email sent successfully', 'config' => $config]);
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString(), 'config' => $config]);
+        }
+    });
     // Removed duplicate: Route::post('send-message') - use the one inside jwt.verify middleware
     Route::post('filter', 'API\ApiController@filter');
     Route::get('category', 'API\ApiController@category');
