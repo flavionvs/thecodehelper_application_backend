@@ -449,9 +449,8 @@ class ApiController extends Controller
                 \Log::error('Invalid amount calculated for payment', [
                     'application_lookup_id' => $appId,
                     'application_id' => $apps->id ?? null,
-                    'application_id'        => $apps->id ?? null,
-                    'total_amount'          => $apps->total_amount,
-                    'amount_cents'          => $amountCents,
+                    'total_amount'   => $apps->total_amount,
+                    'amount_cents'   => $amountCents,
                 ]);
                 return response()->json([
                     'status'  => false,
@@ -564,7 +563,7 @@ class ApiController extends Controller
                                 'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
                                 'type' => 'project',
                                 'link' => '/dashboard?tab=ongoing',
-                                'reference_id' => $project->id ?? $project->id,
+                                'reference_id' => $project->id,
                             ]);
 
                             // Notify the client that payment succeeded
@@ -586,14 +585,12 @@ class ApiController extends Controller
                         \Log::info('Payment finalized: project flipped to in_progress + paid', [
                             'intent' => $intentId,
                             'project_id' => $project->id ?? null,
-                            'project_id' => $project->id ?? null,
                             'selected_application_id' => $project->selected_application_id ?? null,
                         ]);
                     });
                 } catch (\Throwable $e) {
                     \Log::error('Payment succeeded but DB finalization failed', [
                         'intent' => $intentId,
-                        'application_id' => $apps->id ?? null,
                         'application_id' => $apps->id ?? null,
                         'project_id' => $apps->project_id ?? null,
                         'error' => $e->getMessage(),
@@ -1138,7 +1135,6 @@ class ApiController extends Controller
                     \Log::info('[FixPaymentStatuses] About to fix', [
                         'payment_id' => $payment->id,
                         'app_id' => $application->id,
-                        'project_id' => $project->id,
                         'project_id' => $project->id,
                         'appPk' => $appPk,
                     ]);
