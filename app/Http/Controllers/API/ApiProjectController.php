@@ -12,6 +12,7 @@ use App\Models\Payment;
 use App\Models\Project;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\EmailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -548,6 +549,13 @@ class ApiProjectController extends Controller
                     'link' => '/user/applications/' . $storeProjectId,
                     'reference_id' => $storeProjectId,
                 ]);
+
+                // ✅ Send email to client about new application
+                $client = User::find($project->user_id);
+                $freelancer = auth()->user();
+                if ($client && $freelancer) {
+                    EmailService::sendNewApplication($client, $project, $freelancer, request()->amount ?? $project->budget);
+                }
             } catch (\Throwable $e) {
                 \Log::error('Apply notification failed: ' . $e->getMessage(), [
                     'project_id' => $storeProjectId,
@@ -812,6 +820,14 @@ class ApiProjectController extends Controller
                     'link' => '/user/project?type=ongoing',
                     'reference_id' => $proj->id,
                 ]);
+
+                // ✅ Send emails to both parties
+                $freelancer = User::find($applied->user_id);
+                $client = User::find($proj->user_id);
+                if ($freelancer && $client) {
+                    EmailService::sendApplicationApproved($freelancer, $proj, $client, $applied->amount ?? $proj->budget);
+                    EmailService::sendPaymentSuccessful($client, $proj, $freelancer, $applied->amount ?? $proj->budget);
+                }
             } catch (\Throwable $e) {
                 \Log::error('[updateApplicationStatus] notification failed: ' . $e->getMessage());
             }
@@ -922,6 +938,17 @@ class ApiProjectController extends Controller
                 'reference_id' => $project->id,
             ]);
 
+            // ✅ Send email to client about completion request
+            try {
+                $client = User::find($project->user_id);
+                $freelancer = auth()->user();
+                if ($client && $freelancer) {
+                    EmailService::sendCompletionRequested($client, $project, $freelancer);
+                }
+            } catch (\Throwable $e) {
+                \Log::error('Completion request email failed: ' . $e->getMessage());
+            }
+
             DB::commit();
             return response()->json(['status' => true, 'message' => 'Project completion request sent successfully.']);
         } catch (\Exception $e) {
@@ -1014,6 +1041,30 @@ class ApiProjectController extends Controller
                 'link' => '/user/project?type=completed',
                 'reference_id' => $project->id,
             ]);
+
+            // ✅ Send project completed emails to both parties
+            try {
+                $freelancer = User::find($application->user_id);
+                $client = User::find($project->user_id);
+                if ($freelancer) {
+                    EmailService::sendProjectCompleted(
+                        $freelancer, 
+                        $project, 
+                        $application->amount,
+                        "Congratulations! Your work on \"{$project->title}\" has been accepted. Payment of \${$application->amount} has been transferred to your account."
+                    );
+                }
+                if ($client) {
+                    EmailService::sendProjectCompleted(
+                        $client, 
+                        $project, 
+                        $application->amount,
+                        "The project \"{$project->title}\" has been marked as completed. Thank you for using The Code Helper!"
+                    );
+                }
+            } catch (\Throwable $e) {
+                \Log::error('Project completed email failed: ' . $e->getMessage());
+            }
 
             DB::commit();
             return response()->json(['status' => true, 'message' => 'Project accepted successfully.']);

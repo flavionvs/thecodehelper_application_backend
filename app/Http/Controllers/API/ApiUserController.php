@@ -9,6 +9,7 @@ use App\Models\UserLang;
 use App\Models\UserTechnology;
 use App\Models\UserLanguage;
 use App\Models\UserProgrammingLanguage;
+use App\Services\EmailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
@@ -247,10 +248,7 @@ class ApiUserController extends Controller
         return response()->json(['status' => false, 'message' => 'User does not exist!']);
       }
       try{
-        Mail::send('emails.forgot-password', compact('user'), function ($q) use($user){
-          $q->to($user->email);
-          $q->subject('Reset Password');
-        });
+        EmailService::sendForgotPassword($user);
       }catch(\Exception $e){
         return response()->json(['status' => false, 'message' => 'Otp not sent! use this opt for now '.$user->otp]);
       }
