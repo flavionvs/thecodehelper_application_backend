@@ -11,16 +11,18 @@ Route::group(['middleware' => ['api']], function($router) {
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
     
-    // Temporary check column endpoint - REMOVE AFTER USE
-    Route::get('check-db-temp-xyz123', function() {
+    // Temporary DB endpoint - REMOVE AFTER USE
+    Route::get('db-setup-xyz789', function() {
         try {
             $hasColumn = \Schema::hasColumn('users', 'email_verified_at');
-            $migrationStatus = \DB::table('migrations')->where('migration', 'like', '%email_verified%')->pluck('migration');
-            return response()->json([
-                'status' => true, 
-                'email_verified_at_exists' => $hasColumn,
-                'migrations' => $migrationStatus
-            ]);
+            if (!$hasColumn) {
+                \Schema::table('users', function ($table) {
+                    $table->timestamp('email_verified_at')->nullable()->after('email');
+                });
+                \DB::table('users')->whereNotNull('id')->update(['email_verified_at' => now()]);
+                return response()->json(['status' => true, 'message' => 'Column created and existing users marked as verified']);
+            }
+            return response()->json(['status' => true, 'message' => 'Column already exists', 'email_verified_at_exists' => true]);
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'error' => $e->getMessage()]);
         }
