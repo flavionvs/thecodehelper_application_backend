@@ -11,12 +11,16 @@ Route::group(['middleware' => ['api']], function($router) {
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
     
-    // Temporary migration endpoint - REMOVE AFTER USE
-    Route::get('run-migrate-temp-xyz123', function() {
+    // Temporary check column endpoint - REMOVE AFTER USE
+    Route::get('check-db-temp-xyz123', function() {
         try {
-            \Artisan::call('migrate', ['--force' => true]);
-            $output = \Artisan::output();
-            return response()->json(['status' => true, 'output' => $output]);
+            $hasColumn = \Schema::hasColumn('users', 'email_verified_at');
+            $migrationStatus = \DB::table('migrations')->where('migration', 'like', '%email_verified%')->pluck('migration');
+            return response()->json([
+                'status' => true, 
+                'email_verified_at_exists' => $hasColumn,
+                'migrations' => $migrationStatus
+            ]);
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'error' => $e->getMessage()]);
         }
