@@ -14,9 +14,13 @@ class EmailService
     {
         try {
             Mail::send('emails.application-approved', [
-                'freelancer_name' => $freelancer->name,
+                'freelancer_name' => $freelancer->first_name,
+                'freelancer_email' => $freelancer->email,
                 'project_title' => $project->title,
-                'client_name' => $client->name,
+                'project_id' => $project->id,
+                'project_description' => $project->description,
+                'client_name' => $client->first_name,
+                'client_email' => $client->email,
                 'budget' => $amount,
             ], function ($message) use ($freelancer) {
                 $message->to($freelancer->email)
@@ -41,9 +45,13 @@ class EmailService
     {
         try {
             Mail::send('emails.payment-successful', [
-                'client_name' => $client->name,
+                'client_name' => $client->first_name,
+                'client_email' => $client->email,
                 'project_title' => $project->title,
-                'freelancer_name' => $freelancer->name,
+                'project_id' => $project->id,
+                'project_description' => $project->description,
+                'freelancer_name' => $freelancer->first_name,
+                'freelancer_email' => $freelancer->email,
                 'amount' => $amount,
             ], function ($message) use ($client) {
                 $message->to($client->email)
@@ -68,11 +76,14 @@ class EmailService
     {
         try {
             Mail::send('emails.new-application', [
-                'client_name' => $client->name,
+                'client_name' => $client->first_name,
+                'client_email' => $client->email,
                 'project_title' => $project->title,
-                'freelancer_name' => $freelancer->name,
-                'amount' => $amount,
                 'project_id' => $project->id,
+                'project_description' => $project->description,
+                'freelancer_name' => $freelancer->first_name,
+                'freelancer_email' => $freelancer->email,
+                'amount' => $amount,
             ], function ($message) use ($client) {
                 $message->to($client->email)
                     ->subject('📬 New Application Received - The Code Helper');
@@ -96,9 +107,12 @@ class EmailService
     {
         try {
             Mail::send('emails.completion-requested', [
-                'client_name' => $client->name,
+                'client_name' => $client->first_name,
+                'client_email' => $client->email,
                 'project_title' => $project->title,
-                'freelancer_name' => $freelancer->name,
+                'project_id' => $project->id,
+                'freelancer_name' => $freelancer->first_name,
+                'freelancer_email' => $freelancer->email,
             ], function ($message) use ($client) {
                 $message->to($client->email)
                     ->subject('📋 Project Completion Requested - The Code Helper');
@@ -122,8 +136,10 @@ class EmailService
     {
         try {
             Mail::send('emails.project-completed', [
-                'user_name' => $user->name,
+                'user_name' => $user->first_name,
+                'user_email' => $user->email,
                 'project_title' => $project->title,
+                'project_id' => $project->id,
                 'amount' => $amount,
                 'message' => $customMessage,
             ], function ($message) use ($user) {
@@ -185,6 +201,61 @@ class EmailService
             Log::error('Failed to send forgot password email', [
                 'error' => $e->getMessage(),
                 'user_id' => $user->id ?? null,
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Send signup OTP verification email
+     */
+    public static function sendSignupOtp($user)
+    {
+        try {
+            Mail::send('emails.verify-email', [
+                'user' => $user,
+            ], function ($message) use ($user) {
+                $message->to($user->email)
+                    ->subject('✉️ Verify Your Email - The Code Helper');
+            });
+            
+            Log::info('Signup OTP email sent', ['user_id' => $user->id, 'email' => $user->email]);
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Failed to send signup OTP email', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id ?? null,
+                'email' => $user->email ?? null,
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Send project created notification email to client
+     */
+    public static function sendProjectCreated($client, $project)
+    {
+        try {
+            Mail::send('emails.project-created', [
+                'client_name' => $client->first_name,
+                'client_email' => $client->email,
+                'project_title' => $project->title,
+                'project_id' => $project->id,
+                'project_description' => \Illuminate\Support\Str::limit(strip_tags($project->description), 200),
+                'project_budget' => $project->budget,
+                'project_slug' => $project->slug,
+            ], function ($message) use ($client) {
+                $message->to($client->email)
+                    ->subject('🚀 Project Created Successfully - The Code Helper');
+            });
+            
+            Log::info('Project created email sent', ['client_id' => $client->id, 'project_id' => $project->id]);
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Failed to send project created email', [
+                'error' => $e->getMessage(),
+                'client_id' => $client->id ?? null,
             ]);
             return false;
         }

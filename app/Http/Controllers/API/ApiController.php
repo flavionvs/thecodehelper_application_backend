@@ -240,6 +240,11 @@ class ApiController extends Controller
         $price_range = request()->price_range != 'All' ? request()->price_range : null;
 
         $project = Project::select('projects.*')
+            // ✅ Only show projects that are pending (not yet assigned to a freelancer)
+            ->where(function($q) {
+                $q->where('projects.status', 'pending')
+                  ->whereNull('projects.selected_application_id');
+            })
             ->when($price_range, function ($q) use ($price_range) {
                 $min_price = explode('-', $price_range)[0] ?? null;
                 $max_price = explode('-', $price_range)[1] ?? null;

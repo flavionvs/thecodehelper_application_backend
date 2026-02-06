@@ -45,5 +45,18 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | SendGrid
+    |--------------------------------------------------------------------------
+    |
+    | SendGrid configuration for transactional emails.
+    |
+    */
+
+    'sendgrid' => [
+        'api_key' => env('Send_Grid_API'),
+    ],
+
 ];
 

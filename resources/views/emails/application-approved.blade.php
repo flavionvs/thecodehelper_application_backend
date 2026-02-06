@@ -41,6 +41,12 @@
                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
                     <tr>
                         <td style="padding: 5px 0;">
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #888888;">Project ID:</span>
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #333333; font-weight: 600;">#{{ $project_id ?? '0' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px 0;">
                             <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #888888;">Budget:</span>
                             <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #333333; font-weight: 600;">${{ $budget ?? '0' }}</span>
                         </td>
@@ -51,7 +57,21 @@
                             <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #333333;">{{ $client_name ?? 'Client' }}</span>
                         </td>
                     </tr>
+                    <tr>
+                        <td style="padding: 5px 0;">
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #888888;">Your Email:</span>
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #333333;">{{ $freelancer_email ?? '' }}</span>
+                        </td>
+                    </tr>
                 </table>
+                @if(isset($project_description) && $project_description)
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                    <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #888888;">Description:</span>
+                    <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #555555; margin: 5px 0 0 0; line-height: 22px;">
+                        {{ \Illuminate\Support\Str::limit(strip_tags($project_description), 200) }}
+                    </p>
+                </div>
+                @endif
             </td>
         </tr>
     </table>

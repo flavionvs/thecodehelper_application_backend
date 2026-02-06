@@ -19,17 +19,27 @@ Route::group(['middleware' => ['api']], function($router) {
             'MAIL_PORT' => env('MAIL_PORT'),
             'MAIL_USERNAME' => env('MAIL_USERNAME'),
             'MAIL_PASSWORD' => env('MAIL_PASSWORD') ? 'SET (hidden)' : 'NOT SET',
+            'Send_Grid_API' => env('Send_Grid_API') ? 'SET (hidden)' : 'NOT SET',
             'MAIL_ENCRYPTION' => env('MAIL_ENCRYPTION'),
             'MAIL_FROM_ADDRESS' => env('MAIL_FROM_ADDRESS'),
             'MAIL_FROM_NAME' => env('MAIL_FROM_NAME'),
         ];
         
         try {
-            Mail::raw('Test email from The Code Helper - ' . date('Y-m-d H:i:s'), function ($message) {
-                $message->to('ranjanshrm07@gmail.com')
-                    ->subject('Test Email Debug');
+            // Create a mock user object for testing
+            $mockUser = new \stdClass();
+            $mockUser->id = 999;
+            $mockUser->first_name = 'Ranjan';
+            $mockUser->email = 'ranjans838@gmail.com';
+            $mockUser->otp = '123456';
+            
+            Mail::send('emails.verify-email', [
+                'user' => $mockUser,
+            ], function ($message) {
+                $message->to('ranjans838@gmail.com')
+                    ->subject('✉️ Test Email - The Code Helper');
             });
-            return response()->json(['status' => true, 'message' => 'Email sent successfully', 'config' => $config]);
+            return response()->json(['status' => true, 'message' => 'Email sent successfully to ranjans838@gmail.com', 'config' => $config]);
         } catch (\Exception $e) {
             return response()->json(['status' => false, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString(), 'config' => $config]);
         }
@@ -118,7 +128,9 @@ Route::group(['middleware' => ['api']], function($router) {
     
     Route::post('/logout', 'API\JWTController@logout');    
     Route::post('/register', 'API\JWTController@register');
-    Route::post('/login', 'API\JWTController@login');         
+    Route::post('/login', 'API\JWTController@login');
+    Route::post('/verify-signup-otp', 'API\JWTController@verifySignupOtp');
+    Route::post('/resend-signup-otp', 'API\JWTController@resendSignupOtp');
     Route::post('/send-otp', 'API\ApiUserController@sendOtp');
     Route::post('/verify-otp', 'API\ApiUserController@verifyOtp');
     Route::post('/change-password', 'API\ApiUserController@changePassword');

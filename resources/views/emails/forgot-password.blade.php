@@ -21,7 +21,7 @@
     
     <!-- Message -->
     <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 16px; color: #555555; line-height: 26px; margin: 0 0 20px 0; text-align: center;">
-        Hi{{ isset($user->name) ? ' ' . $user->name : '' }},
+        Hi{{ isset($user->first_name) ? ' ' . $user->first_name : '' }},
     </p>
     
     <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 16px; color: #555555; line-height: 26px; margin: 0 0 30px 0; text-align: center;">

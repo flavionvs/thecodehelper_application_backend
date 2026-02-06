@@ -38,6 +38,14 @@
                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
                     <tr>
                         <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #888888;">Project ID:</span>
+                        </td>
+                        <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #333333;">#{{ $project_id ?? '0' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
                             <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #888888;">Project:</span>
                         </td>
                         <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">
@@ -50,6 +58,14 @@
                         </td>
                         <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">
                             <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #333333;">{{ $freelancer_name ?? 'Freelancer' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #888888;">Your Email:</span>
+                        </td>
+                        <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef; text-align: right;">
+                            <span style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #333333;">{{ $client_email ?? '' }}</span>
                         </td>
                     </tr>
                     <tr>

@@ -341,6 +341,16 @@ class ApiProjectController extends Controller
 
             DB::commit();
 
+            // Send project created email to client
+            try {
+                $client = User::find(authId());
+                if ($client) {
+                    EmailService::sendProjectCreated($client, $project);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send project created email', ['error' => $e->getMessage(), 'project_id' => $project->id]);
+            }
+
             return response()->json([
                 'status' => true,
                 'message' => 'Projects created successfully!',

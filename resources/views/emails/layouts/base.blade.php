@@ -48,8 +48,13 @@
                         <td align="center" style="padding: 20px 0;">
                             <table border="0" cellpadding="0" cellspacing="0">
                                 <tr>
-                                    <td style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 28px; font-weight: bold; color: #1a73e8;">
-                                        🌐 The Code Helper
+                                    <td align="center">
+                                        <a href="https://thecodehelper.com" target="_blank" style="text-decoration: none;">
+                                            <img src="https://thecodehelper.com/assets/images/codehelper-logo.png" 
+                                                 alt="The Code Helper" 
+                                                 width="180" 
+                                                 style="display: block; max-width: 180px; height: auto;" />
+                                        </a>
                                     </td>
                                 </tr>
                             </table>
