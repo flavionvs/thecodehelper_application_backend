@@ -50,10 +50,11 @@
                                 <tr>
                                     <td align="center">
                                         <a href="https://thecodehelper.com" target="_blank" style="text-decoration: none;">
-                                            <img src="https://thecodehelper.com/assets/images/codehelper-logo.png" 
+                                            <img src="https://thecodehelper-api.azurewebsites.net/images/logo.png" 
                                                  alt="The Code Helper" 
-                                                 width="180" 
-                                                 style="display: block; max-width: 180px; height: auto;" />
+                                                 width="160" 
+                                                 height="auto"
+                                                 style="display: block; width: 160px; max-width: 160px; height: auto; border: 0;" />
                                         </a>
                                     </td>
                                 </tr>
