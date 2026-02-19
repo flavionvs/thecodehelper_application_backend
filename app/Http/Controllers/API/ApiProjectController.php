@@ -206,6 +206,9 @@ class ApiProjectController extends Controller
             $array['cancelled_at'] = $cancelled_status && $cancelled_status->created_at ? timeFormat($cancelled_status->created_at) : null;
             $array['completion_request'] = $completion_request && $completion_request->created_at ? timeFormat($completion_request->created_at) : null;
 
+            // Include selected_application_id for cancel action
+            $array['selected_application_id'] = $item->selected_application_id ?? null;
+
             if (!$businessId && !$routeId) {
                 $array['category'] = $item->category->name ?? null;
                 $array['created_at'] = dateFormat($item->created_at);
