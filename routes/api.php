@@ -36,6 +36,7 @@ Route::group(['middleware' => ['api']], function($router) {
         
         Route::post('payment', 'API\ApiController@payment');        
         Route::post('create-checkout-session', 'API\ApiController@createCheckoutSession');        
+        Route::post('verify-checkout-session', 'API\ApiController@verifyCheckoutSession');
         Route::get('wallet-balance', 'API\ApiController@walletBalance');        
         Route::get('account-details', 'API\ApiUserController@accountDetails');        
         

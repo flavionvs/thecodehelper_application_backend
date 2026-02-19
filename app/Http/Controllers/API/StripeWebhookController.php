@@ -47,41 +47,25 @@ class StripeWebhookController extends Controller
 
         if ($type === 'payment_intent.succeeded') {
             $intent = $event->data->object;
-
             $intentId = $intent->id ?? null;
 
-            // ✅ Skip if this PaymentIntent was created by a Checkout Session.
-            // The checkout.session.completed handler will process it instead,
-            // preventing duplicate DB writes, notifications, and emails.
-            if (!empty($intent->invoice) || !empty($intent->metadata->checkout_session_id)) {
-                Log::info('[StripeWebhook] payment_intent.succeeded skipped (Checkout Session intent)', [
+            // ✅ PERMANENT FIX: Skip ALL PaymentIntents created by Checkout Sessions.
+            // The checkout.session.completed handler + verifyCheckoutSession endpoint 
+            // handle everything for the Checkout flow. This handler only processes
+            // direct PaymentIntents (old flow via /payment endpoint).
+            $hasCheckoutMarker = !empty($intent->metadata->checkout_session_id);
+            
+            if ($hasCheckoutMarker) {
+                Log::info('[StripeWebhook] payment_intent.succeeded SKIPPED (Checkout Session PI)', [
                     'intent' => $intentId,
+                    'checkout_session_id' => $intent->metadata->checkout_session_id ?? null,
                 ]);
                 return response()->json(['received' => true], 200);
             }
 
-            // Check Stripe API for latest_charge to detect Checkout Session origin
-            try {
-                \Stripe\Stripe::setApiKey(config('services.stripe.secret') ?: env('STRIPE_SECRET'));
-                $fullIntent = \Stripe\PaymentIntent::retrieve($intentId, ['expand' => ['latest_charge']]);
-                // If this PI has a metadata field from checkout, or if the charges have a session, skip
-                if (!empty($fullIntent->metadata->checkout_session_id)) {
-                    Log::info('[StripeWebhook] payment_intent.succeeded skipped (PI metadata has checkout_session_id)', [
-                        'intent' => $intentId,
-                    ]);
-                    return response()->json(['received' => true], 200);
-                }
-            } catch (\Throwable $e) {
-                // If we can't verify, continue processing as fallback
-                Log::warning('[StripeWebhook] Could not verify PI origin, continuing', [
-                    'intent' => $intentId,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            // Metadata written by ApiController@payment()
-            $appId     = $intent->metadata->application_id ?? null; // stable (id)
-            $projectId = $intent->metadata->project_id ?? null;      // may be projects.id OR id
+            // Metadata written by ApiController@payment() (old direct flow only)
+            $appId     = $intent->metadata->application_id ?? null;
+            $projectId = $intent->metadata->project_id ?? null;
             $userId    = $intent->metadata->user_id ?? null;
 
             if (!$appId || !is_numeric($appId) || (int)$appId <= 0) {

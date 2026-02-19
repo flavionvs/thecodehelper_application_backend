@@ -763,6 +763,187 @@ class ApiController extends Controller
         }
     }
 
+    /**
+     * Verify a Stripe Checkout Session after the user returns from Stripe.
+     * This is the "belt and suspenders" approach — if the webhook is delayed
+     * or misconfigured, this endpoint ensures the DB is updated.
+     */
+    public function verifyCheckoutSession(Request $request)
+    {
+        Stripe::setApiKey(config('services.stripe.secret'));
+
+        $sessionId = $request->input('session_id');
+        if (!$sessionId) {
+            return response()->json(['status' => false, 'message' => 'Missing session_id.'], 422);
+        }
+
+        try {
+            // Retrieve the Checkout Session from Stripe
+            $session = \Stripe\Checkout\Session::retrieve($sessionId);
+
+            \Log::info('[VerifyCheckout] Session retrieved', [
+                'session_id' => $sessionId,
+                'payment_status' => $session->payment_status ?? null,
+                'status' => $session->status ?? null,
+                'metadata' => $session->metadata ?? null,
+            ]);
+
+            if (($session->payment_status ?? '') !== 'paid') {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment not completed yet.',
+                    'payment_status' => $session->payment_status ?? 'unknown',
+                ]);
+            }
+
+            $appId = $session->metadata->application_id ?? null;
+            $projectId = $session->metadata->project_id ?? null;
+            $userId = $session->metadata->user_id ?? null;
+
+            if (!$appId || !is_numeric($appId) || (int)$appId <= 0) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid session metadata.',
+                ], 400);
+            }
+
+            $appIdInt = (int) $appId;
+            $application = Application::find($appIdInt);
+
+            if (!$application) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Application not found.',
+                ], 404);
+            }
+
+            $finalProjectId = (is_numeric($projectId) && (int)$projectId > 0)
+                ? (int)$projectId
+                : (int)($application->project_id ?? 0);
+
+            if ($finalProjectId <= 0) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Project not found.',
+                ], 404);
+            }
+
+            $intentId = $session->payment_intent ?? $sessionId;
+            $amount = isset($session->amount_total)
+                ? ((float)$session->amount_total / 100)
+                : 0;
+
+            $finalUserId = (is_numeric($userId) && (int)$userId > 0) 
+                ? (int)$userId 
+                : (int) auth()->id();
+
+            $result = DB::transaction(function () use (
+                $session, $intentId, $sessionId, $appIdInt, $application,
+                $finalProjectId, $finalUserId, $amount
+            ) {
+                $project = Project::where('id', $finalProjectId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$project) {
+                    return ['updated' => false, 'reason' => 'Project not found'];
+                }
+
+                // Idempotent payment insert
+                $payment = Payment::where('paymentIntentId', $intentId)->first();
+                if (!$payment) {
+                    $payerId = $finalUserId ?: ($project->user_id ?? null);
+                    Payment::create([
+                        'user_id'         => $payerId,
+                        'application_id'  => $appIdInt,
+                        'amount'          => number_format((float)$amount, 2, '.', ''),
+                        'paymentIntentId' => $intentId,
+                        'paymentStatus'   => 'succeeded',
+                        'paymentDetails'  => json_encode($session),
+                        'stripe_transfer_id' => null,
+                    ]);
+                }
+
+                // Update application
+                if (($application->status ?? null) !== 'Approved') {
+                    Application::where('id', $application->id)->update([
+                        'status' => 'Approved',
+                    ]);
+                }
+
+                // Update project
+                $alreadyPaid = ($project->payment_status === 'paid');
+                $project->payment_status = 'paid';
+                $project->status = 'in_progress';
+                $project->selected_application_id = $appIdInt;
+                $project->save();
+
+                // Send notifications + emails ONLY if not already sent
+                if (!$alreadyPaid) {
+                    try {
+                        Notification::create([
+                            'user_id' => $application->user_id,
+                            'title' => 'Payment Received – Start Working! 🚀',
+                            'message' => "Great news! The client has made the payment for \"{$project->title}\". Please start working on the project now. Once you complete and submit the project, and the client approves the completion, you will be automatically paid.",
+                            'type' => 'approved',
+                            'link' => '/user/project?type=ongoing',
+                            'reference_id' => $project->id,
+                        ]);
+                        Notification::create([
+                            'user_id' => $project->user_id,
+                            'title' => 'Payment Confirmed ✅',
+                            'message' => "Your payment for \"{$project->title}\" has been confirmed. The freelancer has been notified to start work. You can track progress from your ongoing projects.",
+                            'type' => 'payment',
+                            'link' => '/user/project?type=ongoing',
+                            'reference_id' => $project->id,
+                        ]);
+                    } catch (\Throwable $e) {
+                        \Log::error('[VerifyCheckout] Notification failed', ['error' => $e->getMessage()]);
+                    }
+
+                    try {
+                        $freelancer = User::find($application->user_id);
+                        $client = User::find($project->user_id);
+                        if ($freelancer && $client) {
+                            EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
+                            EmailService::sendPaymentSuccessful($client, $project, $freelancer, $application->amount ?? $project->budget);
+                        }
+                    } catch (\Throwable $e) {
+                        \Log::error('[VerifyCheckout] Email failed', ['error' => $e->getMessage()]);
+                    }
+                }
+
+                return [
+                    'updated' => true,
+                    'already_paid' => $alreadyPaid,
+                    'project_id' => $project->id,
+                    'project_status' => $project->status,
+                ];
+            });
+
+            \Log::info('[VerifyCheckout] Complete', [
+                'session_id' => $sessionId,
+                'result' => $result,
+            ]);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment verified and processed.',
+                'data' => $result,
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('[VerifyCheckout] Error', [
+                'session_id' => $sessionId,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to verify payment: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function payment_old(Request $request)
     {
         Stripe::setApiKey(config('services.stripe.secret'));
