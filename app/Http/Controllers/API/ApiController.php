@@ -720,8 +720,10 @@ class ApiController extends Controller
                         'product_data' => [
                             'name' => $projectTitle,
                             'description' => 'Price: $' . number_format($apps->amount, 2) .
-                                ' | Commission: $' . number_format($apps->admin_amount, 2) .
+                                ' | Code Helper Commission: $' . number_format($apps->admin_amount, 2) .
                                 ' (' . $apps->admin_commission . '%)' .
+                                ' | Payment Commission: $' . number_format($apps->stripe_amount, 2) .
+                                ' (' . $apps->stripe_commission . '%)' .
                                 ' | Payment Fee: $' . number_format($apps->stripe_fee, 2),
                         ],
                     ],

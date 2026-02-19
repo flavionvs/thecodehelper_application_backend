@@ -7,6 +7,8 @@ use App\Models\Application;
 use App\Models\Notification;
 use App\Models\Payment;
 use App\Models\Project;
+use App\Models\User;
+use App\Services\EmailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -339,7 +341,7 @@ class StripeWebhookController extends Controller
                     $project->selected_application_id = $appIdInt;
                     $project->save();
 
-                    // Notifications (skip if already sent)
+                    // Notifications + emails (skip if already sent)
                     if (!$alreadyPaid) {
                         try {
                             Notification::create([
@@ -360,6 +362,18 @@ class StripeWebhookController extends Controller
                             ]);
                         } catch (\Throwable $e) {
                             Log::error('[StripeWebhook] Checkout notification failed', ['error' => $e->getMessage()]);
+                        }
+
+                        // Send emails to both parties (same as updateApplicationStatus)
+                        try {
+                            $freelancer = User::find($application->user_id);
+                            $client = User::find($project->user_id);
+                            if ($freelancer && $client) {
+                                EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
+                                EmailService::sendPaymentSuccessful($client, $project, $freelancer, $application->amount ?? $project->budget);
+                            }
+                        } catch (\Throwable $e) {
+                            Log::error('[StripeWebhook] Checkout email failed', ['error' => $e->getMessage()]);
                         }
                     }
 
