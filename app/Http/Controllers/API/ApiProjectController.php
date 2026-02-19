@@ -1029,7 +1029,7 @@ class ApiProjectController extends Controller
 
             if (!$freelancer || !$freelancer->stripe_account_id) {
                 DB::rollBack();
-                return response()->json(['status' => false, 'message' => 'Freelancer does not have a connected Stripe account.']);
+                return response()->json(['status' => false, 'message' => 'The freelancer has not connected their Stripe account yet. Payout cannot be processed. Please contact support or ask the freelancer to connect their account.']);
             }
 
             $transfer = transfer($freelancer->stripe_account_id, $application->amount);
