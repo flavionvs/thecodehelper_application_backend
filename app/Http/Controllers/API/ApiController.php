@@ -150,7 +150,8 @@ class ApiController extends Controller
             'data' => $data, 
             'projects' => $prjects, 
             'notification' => $notificaiton,
-            'unread_count' => $unreadCount
+            'unread_count' => $unreadCount,
+            'stripe_connected' => !empty(authUser()->stripe_account_id),
         ]);
     }
 

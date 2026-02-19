@@ -618,6 +618,10 @@ class ApiProjectController extends Controller
         foreach ($applications as $item) {
             $appPk = $this->applicationPk($item);
 
+            // Check if freelancer has connected Stripe
+            $freelancerUser = $item->user;
+            $stripeConnected = !empty($freelancerUser->stripe_account_id);
+
             $data[] = [
                 // ✅ legacy field kept, but DO NOT use it for payments anymore
                 'id' => $item->id,
@@ -645,6 +649,7 @@ class ApiProjectController extends Controller
                     return img($attachment->attachment);
                 })->toArray() : [],
                 'date_and_time' => timeFormat($item->created_at),
+                'stripe_connected' => $stripeConnected,
             ];
         }
 
