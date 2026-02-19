@@ -698,12 +698,11 @@ class ApiController extends Controller
                 return response()->json(['status' => false, 'message' => 'Application identifier is invalid.'], 422);
             }
 
-            // Build success and cancel URLs
+            // Build return URL for embedded checkout
             $frontendUrl = env('FRONTEND_URL', 'https://thecodehelper.com');
-            $successUrl = $frontendUrl . '/payment/success?session_id={CHECKOUT_SESSION_ID}&application_id=' . $stableAppId;
-            $cancelUrl  = $frontendUrl . '/user/applications/' . $apps->project_id . '?title=' . urlencode($projectTitle) . '&payment=cancelled';
+            $returnUrl = $frontendUrl . '/payment/success?session_id={CHECKOUT_SESSION_ID}&application_id=' . $stableAppId;
 
-            \Log::info('Creating Stripe Checkout Session', [
+            \Log::info('Creating Stripe Checkout Session (embedded)', [
                 'application_id' => $stableAppId,
                 'project_id'     => $apps->project_id,
                 'total_amount'   => $apps->total_amount,
@@ -711,6 +710,7 @@ class ApiController extends Controller
             ]);
 
             $session = \Stripe\Checkout\Session::create([
+                'ui_mode' => 'embedded',
                 'payment_method_types' => ['card'],
                 'mode' => 'payment',
                 'line_items' => [[
@@ -734,13 +734,12 @@ class ApiController extends Controller
                     'project_id'     => (string) $apps->project_id,
                     'user_id'        => (string) auth()->id(),
                 ],
-                'success_url' => $successUrl,
-                'cancel_url'  => $cancelUrl,
+                'return_url' => $returnUrl,
             ]);
 
             return response()->json([
                 'status' => true,
-                'checkout_url' => $session->url,
+                'clientSecret' => $session->client_secret,
                 'session_id'   => $session->id,
             ]);
 
