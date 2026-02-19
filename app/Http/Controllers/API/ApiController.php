@@ -740,32 +740,40 @@ class ApiController extends Controller
 
     public function createAccount(Request $request)
     {
-        $user = User::findOrFail(authId());
+        try {
+            $user = User::findOrFail(authId());
 
-        Stripe::setApiKey(config('services.stripe.secret'));
+            Stripe::setApiKey(config('services.stripe.secret'));
 
-        if (!$user->stripe_account_id) {
-            $account = Account::create([
-                'type' => 'express',
-                'email' => authUser()->email,
-                'capabilities' => [
-                    'card_payments' => ['requested' => true],
-                    'transfers' => ['requested' => true],
-                ],
+            if (!$user->stripe_account_id) {
+                $account = Account::create([
+                    'type' => 'express',
+                    'email' => authUser()->email,
+                    'capabilities' => [
+                        'card_payments' => ['requested' => true],
+                        'transfers' => ['requested' => true],
+                    ],
+                ]);
+
+                $user->stripe_account_id = $account->id;
+                $user->save();
+            }
+
+            $returnUrl = config('services.stripe.connect_return_url', 'https://thecodehelper.com/user/account');
+            $refreshUrl = config('services.stripe.connect_refresh_url', 'https://thecodehelper.com/user/account');
+
+            $accountLink = AccountLink::create([
+                'account' => $user->stripe_account_id,
+                'refresh_url' => $refreshUrl,
+                'return_url' => $returnUrl,
+                'type' => 'account_onboarding',
             ]);
 
-            $user->stripe_account_id = $account->id;
-            $user->save();
+            return response()->json(['status' => true, 'url' => $accountLink->url]);
+        } catch (\Exception $e) {
+            \Log::error('Stripe createAccount error', ['error' => $e->getMessage()]);
+            return response()->json(['status' => false, 'message' => 'Failed to create Stripe account: ' . $e->getMessage()], 500);
         }
-
-        $accountLink = AccountLink::create([
-            'account' => $user->stripe_account_id,
-            'refresh_url' => 'https://ndpelectronics.com/codehelper/web/user/account',
-            'return_url' => 'https://ndpelectronics.com/codehelper/web/user/account',
-            'type' => 'account_onboarding',
-        ]);
-
-        return response()->json(['status' => true, 'url' => $accountLink->url]);
     }
 
     public function sendContactQuery(Request $request)

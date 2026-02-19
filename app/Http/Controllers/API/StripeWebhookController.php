@@ -152,6 +152,7 @@ class StripeWebhookController extends Controller
                     }
 
                     // Update project columns (only real columns)
+                    $alreadyPaid = ($project->payment_status === 'paid');
                     $project->payment_status = 'paid';
                     $project->status = 'in_progress';
 
@@ -160,32 +161,34 @@ class StripeWebhookController extends Controller
 
                     $project->save();
 
-                    // ✅ Send notifications to both parties
-                    try {
-                        // Notify the freelancer that their application was approved
-                        Notification::create([
-                            'user_id' => $application->user_id, // Freelancer
-                            'title' => 'Application Approved! 🎉',
-                            'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
-                            'type' => 'approved',
-                            'link' => '/user/project?type=ongoing',
-                            'reference_id' => $project->id,
-                        ]);
+                    // ✅ Send notifications to both parties (skip if already sent by payment())
+                    if (!$alreadyPaid) {
+                        try {
+                            // Notify the freelancer that their application was approved
+                            Notification::create([
+                                'user_id' => $application->user_id, // Freelancer
+                                'title' => 'Application Approved! 🎉',
+                                'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
+                                'type' => 'approved',
+                                'link' => '/user/project?type=ongoing',
+                                'reference_id' => $project->id,
+                            ]);
 
-                        // Notify the client that payment succeeded  
-                        Notification::create([
-                            'user_id' => $project->user_id, // Client
-                            'title' => 'Payment Successful',
-                            'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
-                            'type' => 'payment',
-                            'link' => '/user/project?type=ongoing',
-                            'reference_id' => $project->id,
-                        ]);
-                    } catch (\Throwable $notifyError) {
-                        Log::error('[StripeWebhook] Notification failed', [
-                            'error' => $notifyError->getMessage(),
-                            'project_id' => $project->id ?? null,
-                        ]);
+                            // Notify the client that payment succeeded  
+                            Notification::create([
+                                'user_id' => $project->user_id, // Client
+                                'title' => 'Payment Successful',
+                                'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
+                                'type' => 'payment',
+                                'link' => '/user/project?type=ongoing',
+                                'reference_id' => $project->id,
+                            ]);
+                        } catch (\Throwable $notifyError) {
+                            Log::error('[StripeWebhook] Notification failed', [
+                                'error' => $notifyError->getMessage(),
+                                'project_id' => $project->id ?? null,
+                            ]);
+                        }
                     }
 
                     Log::info('[StripeWebhook] Updated project + application after succeeded intent', [

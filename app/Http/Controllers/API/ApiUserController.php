@@ -314,21 +314,48 @@ class ApiUserController extends Controller
   }
 
   public function accountDetails(){    
-    \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-    if(authUser()->stripe_account_id){
-      $account = \Stripe\Account::retrieve(authUser()->stripe_account_id);
-    }else{
-      $account = null;
+    try {
+        \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+        $account = null;
+        $available_balance = 0;
+        $pending_balance = 0;
+
+        if (authUser()->stripe_account_id) {
+            $account = \Stripe\Account::retrieve(authUser()->stripe_account_id);
+
+            // Get the connected account's balance (not platform balance)
+            $balance = \Stripe\Balance::retrieve(
+                [], 
+                ['stripe_account' => authUser()->stripe_account_id]
+            );
+
+            // Extract USD balance (amounts in cents from Stripe)
+            foreach ($balance->available as $bal) {
+                if ($bal->currency === 'usd') {
+                    $available_balance = number_format($bal->amount / 100, 2, '.', '');
+                }
+            }
+            foreach ($balance->pending as $bal) {
+                if ($bal->currency === 'usd') {
+                    $pending_balance = number_format($bal->amount / 100, 2, '.', '');
+                }
+            }
+        }
+
+        return response()->json([
+            'status' => true, 
+            'message' => 'success', 
+            'data' => $account, 
+            'available_balance' => $available_balance, 
+            'pending_balance' => $pending_balance
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('accountDetails error', ['error' => $e->getMessage()]);
+        return response()->json([
+            'status' => false, 
+            'message' => 'Failed to fetch account details: ' . $e->getMessage()
+        ], 500);
     }
-    $balance = \Stripe\Balance::retrieve();
-    $available_balance = 0;
-    $pending_balance = 0;
-    foreach ($balance->available as $availableBalance) {
-        $available_balance = $availableBalance->amount . ' ' . $availableBalance->currency . PHP_EOL;
-    }
-    foreach ($balance->pending as $pendingBalance) {
-        $pending_balance = $pendingBalance->amount . ' ' . $pendingBalance->currency . PHP_EOL;
-    }
-    return response()->json(['status' => true, 'message' => 'success', 'data' => $account, 'available_balance' => $available_balance, 'pending_balance' => $pending_balance]);        
   }
 }

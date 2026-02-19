@@ -771,14 +771,15 @@ class ApiProjectController extends Controller
             $paymentIntentId = request()->paymentIntentId ?? null;
             $paymentStatus   = request()->paymentStatus ?? null;
 
-            // amount might arrive in cents OR dollars depending on frontend.
+            // amount arrives in cents from Stripe paymentIntent.amount — always divide by 100
             $rawAmount = request()->amount;
             $amount = 0.0;
 
             if (is_numeric($rawAmount)) {
                 $raw = (float)$rawAmount;
-                // heuristic: treat huge numbers as cents
-                $amount = ($raw > 9999) ? ($raw / 100) : $raw;
+                // Stripe always returns amount in smallest currency unit (cents for USD)
+                // Frontend sends paymentIntent.amount directly, so always divide by 100
+                $amount = $raw / 100;
             }
 
             if ($paymentIntentId) {
@@ -809,40 +810,44 @@ class ApiProjectController extends Controller
             }
 
             // ✅ Flip project (THIS is the goal)
+            $alreadyPaid = ($proj->payment_status === 'paid');
             $proj->payment_status = 'paid';
             $proj->status = 'in_progress';
             $proj->selected_application_id = $appPk; // ✅ always stable id
             $proj->save();
 
             // ✅ Notifications should never break flow
-            try {
-                Notification::create([
-                    'user_id' => $applied->user_id,
-                    'title' => 'Application approved',
-                    'message' => 'Your application has been approved',
-                    'type' => 'approved',
-                    'link' => '/user/project?type=ongoing',
-                    'reference_id' => $proj->id,
-                ]);
+            // Skip notifications if project was already paid (payment() or webhook already sent them)
+            if (!$alreadyPaid) {
+                try {
+                    Notification::create([
+                        'user_id' => $applied->user_id,
+                        'title' => 'Application approved',
+                        'message' => 'Your application has been approved',
+                        'type' => 'approved',
+                        'link' => '/user/project?type=ongoing',
+                        'reference_id' => $proj->id,
+                    ]);
 
-                Notification::create([
-                    'user_id' => $proj->user_id,
-                    'title' => 'Payment received',
-                    'message' => 'Project moved to in progress.',
-                    'type' => 'payment',
-                    'link' => '/user/project?type=ongoing',
-                    'reference_id' => $proj->id,
-                ]);
+                    Notification::create([
+                        'user_id' => $proj->user_id,
+                        'title' => 'Payment received',
+                        'message' => 'Project moved to in progress.',
+                        'type' => 'payment',
+                        'link' => '/user/project?type=ongoing',
+                        'reference_id' => $proj->id,
+                    ]);
 
-                // ✅ Send emails to both parties
-                $freelancer = User::find($applied->user_id);
-                $client = User::find($proj->user_id);
-                if ($freelancer && $client) {
-                    EmailService::sendApplicationApproved($freelancer, $proj, $client, $applied->amount ?? $proj->budget);
-                    EmailService::sendPaymentSuccessful($client, $proj, $freelancer, $applied->amount ?? $proj->budget);
+                    // ✅ Send emails to both parties
+                    $freelancer = User::find($applied->user_id);
+                    $client = User::find($proj->user_id);
+                    if ($freelancer && $client) {
+                        EmailService::sendApplicationApproved($freelancer, $proj, $client, $applied->amount ?? $proj->budget);
+                        EmailService::sendPaymentSuccessful($client, $proj, $freelancer, $applied->amount ?? $proj->budget);
+                    }
+                } catch (\Throwable $e) {
+                    \Log::error('[updateApplicationStatus] notification failed: ' . $e->getMessage());
                 }
-            } catch (\Throwable $e) {
-                \Log::error('[updateApplicationStatus] notification failed: ' . $e->getMessage());
             }
 
             DB::commit();
@@ -1017,8 +1022,14 @@ class ApiProjectController extends Controller
 
             $freelancer = User::find($application->user_id);
 
+            if (!$freelancer || !$freelancer->stripe_account_id) {
+                DB::rollBack();
+                return response()->json(['status' => false, 'message' => 'Freelancer does not have a connected Stripe account.']);
+            }
+
             $transfer = transfer($freelancer->stripe_account_id, $application->amount);
             if (!$transfer['status']) {
+                DB::rollBack();
                 return response()->json(['status' => false, 'message' => $transfer['message']]);
             }
 
@@ -1098,7 +1109,15 @@ class ApiProjectController extends Controller
             $application = Application::find($reqId);
 
             if (!$application) {
+                DB::rollBack();
                 return response()->json(['status' => false, 'message' => 'Invalid request sent.']);
+            }
+
+            // ✅ Authorization: only the project owner (client) can cancel
+            $project = Project::find($application->project_id);
+            if (!$project || ($project->user_id !== authId())) {
+                DB::rollBack();
+                return response()->json(['status' => false, 'message' => 'You are not authorized to cancel this application.']);
             }
 
             $appPk = $this->applicationPk($application);
@@ -1117,47 +1136,66 @@ class ApiProjectController extends Controller
                 'status' => 'Cancelled',
             ]);
 
+            // ✅ Transfer freelancer's earned amount (base amount, NOT total_amount which includes platform fees)
             $freelancer_account = User::find($application->user_id);
 
-            $transfer = transfer($freelancer_account->stripe_account_id, $application->total_amount);
-            if (!$transfer['status']) {
-                return response()->json(['status' => false, 'message' => $transfer['message']]);
+            if ($freelancer_account && $freelancer_account->stripe_account_id && $application->amount > 0) {
+                $transfer = transfer($freelancer_account->stripe_account_id, $application->amount);
+                if (!$transfer['status']) {
+                    DB::rollBack();
+                    return response()->json(['status' => false, 'message' => $transfer['message']]);
+                }
+
+                // Record payment to freelancer
+                Payment::create([
+                    'application_id' => $appPk,
+                    'user_id' => $application->user_id,
+                    'amount' => $application->amount,
+                    'paymentStatus' => 'succeeded',
+                    'stripe_transfer_id' => $transfer['stripe_transfer_id'],
+                ]);
+
+                // Record debit from client (total_amount = what they paid)
+                Payment::create([
+                    'application_id' => $appPk,
+                    'user_id' => authId(),
+                    'amount' => -1 * $application->total_amount,
+                    'paymentStatus' => 'succeeded',
+                ]);
             }
 
-            Payment::create([
-                'application_id' => $appPk,
-                'user_id' => authId(),
-                'amount' => -1 * ($application->total_amount * 90 / 100),
-                'paymentStatus' => 'succeeded',
-                'stripe_transfer_id' => $transfer['stripe_transfer_id'],
-            ]);
+            // ✅ Update project status back to open
+            DB::table('projects')
+                ->where('id', $project->id)
+                ->update([
+                    'status' => 'cancelled',
+                    'payment_status' => 'refunded',
+                    'updated_at' => now(),
+                ]);
 
             Notification::create([
                 'user_id' => $application->user_id,
-                'title' => 'Project completion cancelled',
-                'message' => 'Project completion has been cancelled.',
+                'title' => 'Project cancelled',
+                'message' => 'The project has been cancelled by the client.',
                 'type' => 'cancelled',
                 'link' => '/user/project?type=cancelled',
                 'reference_id' => $application->project_id,
             ]);
 
-            $proj = Project::find($application->project_id);
-
-            if ($proj) {
-                Notification::create([
-                    'user_id' => $proj->user_id,
-                    'title' => 'Project completion cancelled',
-                    'message' => 'A project completion was cancelled.',
-                    'type' => 'cancelled',
-                    'link' => '/user/project?type=cancelled',
-                    'reference_id' => $proj->id,
-                ]);
-            }
+            Notification::create([
+                'user_id' => $project->user_id,
+                'title' => 'Project cancelled',
+                'message' => 'You have cancelled the project.',
+                'type' => 'cancelled',
+                'link' => '/user/project?type=cancelled',
+                'reference_id' => $project->id,
+            ]);
 
             DB::commit();
             return response()->json(['status' => true, 'message' => 'Project cancelled successfully.']);
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Cancel error', ['error' => $e->getMessage(), 'application_id' => $application_id]);
             return response()->json(['status' => false, 'message' => $e->getMessage()]);
         }
     }

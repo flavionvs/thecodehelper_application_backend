@@ -43,6 +43,8 @@ return [
     'stripe' => [
         'secret' => env('STRIPE_SECRET_KEY'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'connect_return_url' => env('STRIPE_CONNECT_RETURN_URL', 'https://thecodehelper.com/user/account'),
+        'connect_refresh_url' => env('STRIPE_CONNECT_REFRESH_URL', 'https://thecodehelper.com/user/account'),
     ],
 
     /*
