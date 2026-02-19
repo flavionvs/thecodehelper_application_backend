@@ -79,8 +79,23 @@ class ApiProjectController extends Controller
                 $q->where('applications.status', 'Approved')
                     ->orWhere('applications.status', 'Completion Requested');
             });
+            // Exclude projects with cancellation_requested from ongoing
+            $project_ids->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('projects as p2')
+                    ->whereColumn('p2.id', 'applications.project_id')
+                    ->where('p2.status', 'cancellation_requested');
+            });
         } elseif (request()->type == 'cancelled') {
-            $project_ids->where('applications.status', 'Cancelled');
+            $project_ids->where(function ($q) {
+                $q->where('applications.status', 'Cancelled')
+                  ->orWhereExists(function ($sub) {
+                      $sub->select(DB::raw(1))
+                          ->from('projects as p2')
+                          ->whereColumn('p2.id', 'applications.project_id')
+                          ->where('p2.status', 'cancellation_requested');
+                  });
+            });
         } elseif (request()->type == 'completed') {
             $project_ids->where('applications.status', 'Completed');
         } elseif (request()->type == 'applied') {
