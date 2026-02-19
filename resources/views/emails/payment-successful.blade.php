@@ -16,7 +16,7 @@
     
     <!-- Title -->
     <h1 style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 24px; font-weight: 600; color: #28a745; margin: 0 0 20px 0; text-align: center;">
-        Payment Successful!
+        Payment Confirmed!
     </h1>
     
     <!-- Message -->
@@ -25,7 +25,7 @@
     </p>
     
     <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 16px; color: #555555; line-height: 26px; margin: 0 0 30px 0; text-align: center;">
-        Your payment has been processed successfully. The freelancer has been notified and will start working on your project.
+        Your payment has been confirmed and acknowledged. The freelancer has been notified to start working on your project immediately. You can track the progress from your ongoing projects dashboard.
     </p>
     
     <!-- Payment Receipt Box -->
@@ -98,7 +98,7 @@
         <tr>
             <td style="background-color: #e7f3ff; border-left: 4px solid #1a73e8; padding: 15px; border-radius: 4px;">
                 <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #004085; margin: 0;">
-                    <strong>💬 Stay Connected:</strong> Use the chat feature to communicate with your freelancer and monitor progress.
+                    <strong>💬 Stay Connected:</strong> Use the chat feature to communicate with your freelancer. Once the freelancer marks the project as complete, you will be asked to review and approve the completion.
                 </p>
             </td>
         </tr>

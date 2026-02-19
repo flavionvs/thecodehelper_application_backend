@@ -16,7 +16,7 @@
     
     <!-- Title -->
     <h1 style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 24px; font-weight: 600; color: #28a745; margin: 0 0 20px 0; text-align: center;">
-        Congratulations! Your Application is Approved
+        Payment Received – Start Working!
     </h1>
     
     <!-- Message -->
@@ -25,7 +25,7 @@
     </p>
     
     <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 16px; color: #555555; line-height: 26px; margin: 0 0 30px 0; text-align: center;">
-        Great news! Your application for the project has been approved and payment has been received. You can now start working on the project.
+        Great news! The client has made the payment for your project. Please start working on it right away. Once you complete and submit the project, and the client approves the completion, you will be automatically paid.
     </p>
     
     <!-- Project Details Box -->
@@ -93,7 +93,7 @@
         <tr>
             <td style="background-color: #e7f3ff; border-left: 4px solid #1a73e8; padding: 15px; border-radius: 4px;">
                 <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #004085; margin: 0;">
-                    <strong>💡 Next Steps:</strong> Connect with your client via the chat feature to discuss project requirements and timeline.
+                    <strong>� Automatic Payout:</strong> Once you complete and submit the project, and the client approves the completion, you will be automatically paid to your connected Stripe account.
                 </p>
             </td>
         </tr>

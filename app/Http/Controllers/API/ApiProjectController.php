@@ -827,8 +827,8 @@ class ApiProjectController extends Controller
                 try {
                     Notification::create([
                         'user_id' => $applied->user_id,
-                        'title' => 'Application approved',
-                        'message' => 'Your application has been approved',
+                        'title' => 'Payment Received – Start Working! 🚀',
+                        'message' => "Great news! The client has made the payment for \"{$proj->title}\". Please start working on the project now. Once you complete and submit the project, and the client approves the completion, you will be automatically paid.",
                         'type' => 'approved',
                         'link' => '/user/project?type=ongoing',
                         'reference_id' => $proj->id,
@@ -836,8 +836,8 @@ class ApiProjectController extends Controller
 
                     Notification::create([
                         'user_id' => $proj->user_id,
-                        'title' => 'Payment received',
-                        'message' => 'Project moved to in progress.',
+                        'title' => 'Payment Confirmed ✅',
+                        'message' => "Your payment for \"{$proj->title}\" has been confirmed. The freelancer has been notified to start work. You can track progress from your ongoing projects.",
                         'type' => 'payment',
                         'link' => '/user/project?type=ongoing',
                         'reference_id' => $proj->id,

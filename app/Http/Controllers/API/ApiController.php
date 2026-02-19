@@ -571,21 +571,21 @@ class ApiController extends Controller
 
                         // ✅ Send notifications to both parties
                         try {
-                            // Notify the freelancer that their application was approved and payment received
+                            // Notify the freelancer that payment received and to start work
                             Notification::create([
                                 'user_id' => $apps->user_id, // Freelancer who applied
-                                'title' => 'Application Approved! 🎉',
-                                'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
+                                'title' => 'Payment Received – Start Working! 🚀',
+                                'message' => "Great news! The client has made the payment for \"{$project->title}\". Please start working on the project now. Once you complete and submit the project, and the client approves the completion, you will be automatically paid.",
                                 'type' => 'approved',
                                 'link' => '/user/project?type=ongoing',
                                 'reference_id' => $project->id,
                             ]);
 
-                            // Notify the client that payment succeeded
+                            // Notify the client that payment confirmed
                             Notification::create([
                                 'user_id' => $project->user_id, // Client who posted the project
-                                'title' => 'Payment Successful',
-                                'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
+                                'title' => 'Payment Confirmed ✅',
+                                'message' => "Your payment for \"{$project->title}\" has been confirmed. The freelancer has been notified to start work. You can track progress from your ongoing projects.",
                                 'type' => 'payment',
                                 'link' => '/user/project?type=ongoing',
                                 'reference_id' => $project->id,

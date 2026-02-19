@@ -24,7 +24,7 @@ class EmailService
                 'budget' => $amount,
             ], function ($message) use ($freelancer) {
                 $message->to($freelancer->email)
-                    ->subject('🎉 Your Application Has Been Approved - The Code Helper');
+                    ->subject('🚀 Payment Received – Start Working on Your Project - The Code Helper');
             });
             
             Log::info('Application approved email sent', ['freelancer_id' => $freelancer->id, 'project_id' => $project->id]);
@@ -55,7 +55,7 @@ class EmailService
                 'amount' => $amount,
             ], function ($message) use ($client) {
                 $message->to($client->email)
-                    ->subject('✅ Payment Successful - The Code Helper');
+                    ->subject('✅ Payment Confirmed - The Code Helper');
             });
             
             Log::info('Payment successful email sent', ['client_id' => $client->id, 'project_id' => $project->id]);
