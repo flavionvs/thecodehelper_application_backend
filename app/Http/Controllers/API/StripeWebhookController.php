@@ -50,6 +50,35 @@ class StripeWebhookController extends Controller
 
             $intentId = $intent->id ?? null;
 
+            // ✅ Skip if this PaymentIntent was created by a Checkout Session.
+            // The checkout.session.completed handler will process it instead,
+            // preventing duplicate DB writes, notifications, and emails.
+            if (!empty($intent->invoice) || !empty($intent->metadata->checkout_session_id)) {
+                Log::info('[StripeWebhook] payment_intent.succeeded skipped (Checkout Session intent)', [
+                    'intent' => $intentId,
+                ]);
+                return response()->json(['received' => true], 200);
+            }
+
+            // Check Stripe API for latest_charge to detect Checkout Session origin
+            try {
+                \Stripe\Stripe::setApiKey(config('services.stripe.secret') ?: env('STRIPE_SECRET'));
+                $fullIntent = \Stripe\PaymentIntent::retrieve($intentId, ['expand' => ['latest_charge']]);
+                // If this PI has a metadata field from checkout, or if the charges have a session, skip
+                if (!empty($fullIntent->metadata->checkout_session_id)) {
+                    Log::info('[StripeWebhook] payment_intent.succeeded skipped (PI metadata has checkout_session_id)', [
+                        'intent' => $intentId,
+                    ]);
+                    return response()->json(['received' => true], 200);
+                }
+            } catch (\Throwable $e) {
+                // If we can't verify, continue processing as fallback
+                Log::warning('[StripeWebhook] Could not verify PI origin, continuing', [
+                    'intent' => $intentId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             // Metadata written by ApiController@payment()
             $appId     = $intent->metadata->application_id ?? null; // stable (id)
             $projectId = $intent->metadata->project_id ?? null;      // may be projects.id OR id
@@ -163,7 +192,7 @@ class StripeWebhookController extends Controller
 
                     $project->save();
 
-                    // ✅ Send notifications to both parties (skip if already sent by payment())
+                    // ✅ Send notifications + emails to both parties (skip if already sent)
                     if (!$alreadyPaid) {
                         try {
                             // Notify the freelancer that payment received and to start work
@@ -188,6 +217,21 @@ class StripeWebhookController extends Controller
                         } catch (\Throwable $notifyError) {
                             Log::error('[StripeWebhook] Notification failed', [
                                 'error' => $notifyError->getMessage(),
+                                'project_id' => $project->id ?? null,
+                            ]);
+                        }
+
+                        // ✅ Send emails to both parties
+                        try {
+                            $freelancer = User::find($application->user_id);
+                            $client = User::find($project->user_id);
+                            if ($freelancer && $client) {
+                                EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
+                                EmailService::sendPaymentSuccessful($client, $project, $freelancer, $application->amount ?? $project->budget);
+                            }
+                        } catch (\Throwable $emailError) {
+                            Log::error('[StripeWebhook] Email failed in PI handler', [
+                                'error' => $emailError->getMessage(),
                                 'project_id' => $project->id ?? null,
                             ]);
                         }

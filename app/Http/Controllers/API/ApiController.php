@@ -734,6 +734,14 @@ class ApiController extends Controller
                     'project_id'     => (string) $apps->project_id,
                     'user_id'        => (string) auth()->id(),
                 ],
+                'payment_intent_data' => [
+                    'metadata' => [
+                        'application_id'      => (string) $stableAppId,
+                        'project_id'          => (string) $apps->project_id,
+                        'user_id'             => (string) auth()->id(),
+                        'checkout_session_id' => 'pending', // marker for webhook dedup
+                    ],
+                ],
                 'success_url' => $successUrl,
                 'cancel_url'  => $cancelUrl,
             ]);
