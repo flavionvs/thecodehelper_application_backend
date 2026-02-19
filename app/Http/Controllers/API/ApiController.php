@@ -653,6 +653,106 @@ class ApiController extends Controller
         }
     }
 
+    /**
+     * Create a Stripe Checkout Session (hosted payment page).
+     * Client is redirected to Stripe's page to enter card details.
+     * After payment, Stripe redirects back and webhook finalizes.
+     */
+    public function createCheckoutSession(Request $request)
+    {
+        Stripe::setApiKey(config('services.stripe.secret'));
+
+        try {
+            $rawAppId = $request->input('applicationId') ?? $request->input('application_id');
+
+            if ($rawAppId === null || $rawAppId === '' || $rawAppId === 'undefined' || $rawAppId === 'null') {
+                return response()->json(['status' => false, 'message' => 'Missing application id.'], 422);
+            }
+
+            $appId = (int) $rawAppId;
+            if ($appId <= 0) {
+                return response()->json(['status' => false, 'message' => 'Invalid application id.'], 422);
+            }
+
+            $apps = $this->findApplicationByAnyId($appId);
+            if (!$apps) {
+                return response()->json(['status' => false, 'message' => 'Application not found.'], 422);
+            }
+
+            if (empty($apps->project_id) || (int) $apps->project_id === 0) {
+                return response()->json(['status' => false, 'message' => 'Application is missing project_id.'], 422);
+            }
+
+            // Get project title for the line item description
+            $project = Project::find($apps->project_id);
+            $projectTitle = $project ? $project->title : 'Project Payment';
+
+            // Amount in cents
+            $amountCents = (int) round(roundOff($apps->total_amount) * 100);
+            if ($amountCents <= 0) {
+                return response()->json(['status' => false, 'message' => 'Invalid amount.'], 422);
+            }
+
+            $stableAppId = (int) ($apps->id ?? 0);
+            if ($stableAppId <= 0) {
+                return response()->json(['status' => false, 'message' => 'Application identifier is invalid.'], 422);
+            }
+
+            // Build success and cancel URLs
+            $frontendUrl = env('FRONTEND_URL', 'https://thecodehelper.com');
+            $successUrl = $frontendUrl . '/payment/success?session_id={CHECKOUT_SESSION_ID}&application_id=' . $stableAppId;
+            $cancelUrl  = $frontendUrl . '/user/applications/' . $apps->project_id . '?title=' . urlencode($projectTitle) . '&payment=cancelled';
+
+            \Log::info('Creating Stripe Checkout Session', [
+                'application_id' => $stableAppId,
+                'project_id'     => $apps->project_id,
+                'total_amount'   => $apps->total_amount,
+                'amount_cents'   => $amountCents,
+            ]);
+
+            $session = \Stripe\Checkout\Session::create([
+                'payment_method_types' => ['card'],
+                'mode' => 'payment',
+                'line_items' => [[
+                    'price_data' => [
+                        'currency' => 'usd',
+                        'unit_amount' => $amountCents,
+                        'product_data' => [
+                            'name' => $projectTitle,
+                            'description' => 'Price: $' . number_format($apps->amount, 2) .
+                                ' | Commission: $' . number_format($apps->admin_amount, 2) .
+                                ' (' . $apps->admin_commission . '%)' .
+                                ' | Payment Fee: $' . number_format($apps->stripe_fee, 2),
+                        ],
+                    ],
+                    'quantity' => 1,
+                ]],
+                'metadata' => [
+                    'application_id' => (string) $stableAppId,
+                    'project_id'     => (string) $apps->project_id,
+                    'user_id'        => (string) auth()->id(),
+                ],
+                'success_url' => $successUrl,
+                'cancel_url'  => $cancelUrl,
+            ]);
+
+            return response()->json([
+                'status' => true,
+                'checkout_url' => $session->url,
+                'session_id'   => $session->id,
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Stripe Checkout Session error', [
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function payment_old(Request $request)
     {
         Stripe::setApiKey(config('services.stripe.secret'));

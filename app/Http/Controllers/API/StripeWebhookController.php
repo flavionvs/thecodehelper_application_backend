@@ -222,6 +222,163 @@ class StripeWebhookController extends Controller
             return response()->json(['received' => true], 200);
         }
 
+        // ✅ Handle Stripe Checkout Session completed (hosted payment page)
+        if ($type === 'checkout.session.completed') {
+            $session = $event->data->object;
+            $sessionId = $session->id ?? null;
+
+            $appId     = $session->metadata->application_id ?? null;
+            $projectId = $session->metadata->project_id ?? null;
+            $userId    = $session->metadata->user_id ?? null;
+
+            Log::info('[StripeWebhook] checkout.session.completed', [
+                'session_id' => $sessionId,
+                'application_id' => $appId,
+                'project_id' => $projectId,
+                'payment_status' => $session->payment_status ?? null,
+            ]);
+
+            if (!$appId || !is_numeric($appId) || (int)$appId <= 0) {
+                Log::warning('[StripeWebhook] Checkout session missing application_id', [
+                    'session_id' => $sessionId,
+                    'metadata' => $session->metadata ?? null,
+                ]);
+                return response()->json(['received' => true], 200);
+            }
+
+            if (($session->payment_status ?? '') !== 'paid') {
+                Log::info('[StripeWebhook] Checkout session not paid yet', [
+                    'session_id' => $sessionId,
+                    'payment_status' => $session->payment_status ?? null,
+                ]);
+                return response()->json(['received' => true], 200);
+            }
+
+            $appIdInt = (int) $appId;
+            $application = Application::find($appIdInt);
+
+            if (!$application) {
+                Log::warning('[StripeWebhook] Checkout: Application not found', [
+                    'session_id' => $sessionId,
+                    'application_id' => $appIdInt,
+                ]);
+                return response()->json(['received' => true], 200);
+            }
+
+            $finalProjectId = (is_numeric($projectId) && (int)$projectId > 0)
+                ? (int)$projectId
+                : (int)($application->project_id ?? 0);
+
+            if ($finalProjectId <= 0) {
+                Log::warning('[StripeWebhook] Checkout: No usable project id', [
+                    'session_id' => $sessionId,
+                    'application_id' => $appIdInt,
+                ]);
+                return response()->json(['received' => true], 200);
+            }
+
+            $finalUserId = (is_numeric($userId) && (int)$userId > 0) ? (int)$userId : null;
+
+            // Amount in dollars
+            $amount = isset($session->amount_total)
+                ? ((float)$session->amount_total / 100)
+                : 0;
+
+            // Get the PaymentIntent ID from the session
+            $intentId = $session->payment_intent ?? $sessionId;
+
+            try {
+                DB::transaction(function () use (
+                    $session,
+                    $intentId,
+                    $sessionId,
+                    $appIdInt,
+                    $application,
+                    $finalProjectId,
+                    $finalUserId,
+                    $amount
+                ) {
+                    $project = Project::where('id', $finalProjectId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$project) {
+                        Log::warning('[StripeWebhook] Checkout: Project not found', [
+                            'session_id' => $sessionId,
+                            'project_id' => $finalProjectId,
+                        ]);
+                        return;
+                    }
+
+                    // Idempotent payment insert
+                    $payment = Payment::where('paymentIntentId', $intentId)->first();
+                    if (!$payment) {
+                        $payerId = $finalUserId ?: ($project->user_id ?? null);
+                        Payment::create([
+                            'user_id'        => $payerId,
+                            'application_id' => $appIdInt,
+                            'amount'         => number_format((float)$amount, 2, '.', ''),
+                            'paymentIntentId'=> $intentId,
+                            'paymentStatus'  => 'succeeded',
+                            'paymentDetails' => json_encode($session),
+                            'stripe_transfer_id' => null,
+                        ]);
+                    }
+
+                    // Update application status
+                    if (($application->status ?? null) !== 'Approved') {
+                        Application::where('id', $application->id)->update([
+                            'status' => 'Approved',
+                        ]);
+                    }
+
+                    // Update project
+                    $alreadyPaid = ($project->payment_status === 'paid');
+                    $project->payment_status = 'paid';
+                    $project->status = 'in_progress';
+                    $project->selected_application_id = $appIdInt;
+                    $project->save();
+
+                    // Notifications (skip if already sent)
+                    if (!$alreadyPaid) {
+                        try {
+                            Notification::create([
+                                'user_id' => $application->user_id,
+                                'title' => 'Application Approved! 🎉',
+                                'message' => "Your application for \"{$project->title}\" has been approved. Payment received - you can start working on the project now!",
+                                'type' => 'approved',
+                                'link' => '/user/project?type=ongoing',
+                                'reference_id' => $project->id,
+                            ]);
+                            Notification::create([
+                                'user_id' => $project->user_id,
+                                'title' => 'Payment Successful',
+                                'message' => "Your payment for \"{$project->title}\" was successful. The freelancer has been notified to start work.",
+                                'type' => 'payment',
+                                'link' => '/user/project?type=ongoing',
+                                'reference_id' => $project->id,
+                            ]);
+                        } catch (\Throwable $e) {
+                            Log::error('[StripeWebhook] Checkout notification failed', ['error' => $e->getMessage()]);
+                        }
+                    }
+
+                    Log::info('[StripeWebhook] Checkout: project finalized', [
+                        'session_id' => $sessionId,
+                        'application_id' => $appIdInt,
+                        'project_id' => $project->id,
+                    ]);
+                });
+            } catch (\Throwable $e) {
+                Log::error('[StripeWebhook] Checkout processing failed', [
+                    'session_id' => $sessionId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return response()->json(['received' => true], 200);
+        }
+
         return response()->json(['received' => true], 200);
     }
 }
