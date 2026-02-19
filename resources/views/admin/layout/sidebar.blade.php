@@ -18,6 +18,9 @@
     <li class="@if(Request::url() == url(guardName().'/application')) active @endif">
       <a class="side-menu__item" href="{{url(guardName().'/application')}}"><i class="side-menu__icon  fe fe-circle"></i><span class="side-menu__label">Application</span></a>
     </li>               
+    <li class="@if(Request::url() == url(guardName().'/cancellation-requests')) active @endif">
+      <a class="side-menu__item" href="{{url(guardName().'/cancellation-requests')}}"><i class="side-menu__icon  fe fe-circle"></i><span class="side-menu__label">Cancellation Requests</span></a>
+    </li>               
     <li class="@if(Request::url() == url(guardName().'/payment-history')) active @endif">
       <a class="side-menu__item" href="{{url(guardName().'/payment-history')}}"><i class="side-menu__icon  fe fe-circle"></i><span class="side-menu__label">Payment History</span></a>
     </li>               

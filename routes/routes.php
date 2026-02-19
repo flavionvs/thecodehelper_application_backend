@@ -58,6 +58,8 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
 
         Route::resource('project', 'ProjectController');
         Route::get('application/{project_id?}', 'ProjectController@application');
+        Route::get('cancellation-requests', 'ProjectController@cancellationRequests');
+        Route::post('process-cancellation/{project_id}', 'ProjectController@processCancellation');
 
         Route::resource('technology', 'TechnologyController');
         Route::resource('language', 'LanguageController');

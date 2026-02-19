@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\EmailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 
 class ApiProjectController extends Controller
@@ -1125,79 +1126,77 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'You are not authorized to cancel this application.']);
             }
 
+            // Prevent duplicate cancellation requests
+            if ($project->status === 'cancellation_requested') {
+                DB::rollBack();
+                return response()->json(['status' => false, 'message' => 'A cancellation request is already in progress for this project.']);
+            }
+
             $appPk = $this->applicationPk($application);
 
-            // Use direct DB update to avoid INVISIBLE id column issues with Eloquent save()
+            // Store the cancel reason on the application
             DB::table('applications')
                 ->where('id', $appPk)
                 ->update([
-                    'status' => 'Cancelled',
                     'cancel_reason' => request()->cancel_reason,
                     'updated_at' => now(),
                 ]);
 
-            ApplicationStatus::updateOrCreate([
-                'application_id' => $appPk,
-                'status' => 'Cancelled',
-            ]);
-
-            // ✅ Transfer freelancer's earned amount (base amount, NOT total_amount which includes platform fees)
-            $freelancer_account = User::find($application->user_id);
-
-            if ($freelancer_account && $freelancer_account->stripe_account_id && $application->amount > 0) {
-                $transfer = transfer($freelancer_account->stripe_account_id, $application->amount);
-                if (!$transfer['status']) {
-                    DB::rollBack();
-                    return response()->json(['status' => false, 'message' => $transfer['message']]);
-                }
-
-                // Record payment to freelancer
-                Payment::create([
-                    'application_id' => $appPk,
-                    'user_id' => $application->user_id,
-                    'amount' => $application->amount,
-                    'paymentStatus' => 'succeeded',
-                    'stripe_transfer_id' => $transfer['stripe_transfer_id'],
-                ]);
-
-                // Record debit from client (total_amount = what they paid)
-                Payment::create([
-                    'application_id' => $appPk,
-                    'user_id' => authId(),
-                    'amount' => -1 * $application->total_amount,
-                    'paymentStatus' => 'succeeded',
-                ]);
-            }
-
-            // ✅ Update project status back to open
+            // ✅ Set project status to cancellation_requested (NOT cancelled)
+            // Admin will review and manually process the refund
             DB::table('projects')
                 ->where('id', $project->id)
                 ->update([
-                    'status' => 'cancelled',
-                    'payment_status' => 'refunded',
+                    'status' => 'cancellation_requested',
                     'updated_at' => now(),
                 ]);
 
+            // Notify the freelancer that cancellation has been requested
             Notification::create([
                 'user_id' => $application->user_id,
-                'title' => 'Project cancelled',
-                'message' => 'The project has been cancelled by the client.',
+                'title' => 'Cancellation Requested ⚠️',
+                'message' => "The client has requested cancellation for \"{$project->title}\". The admin will review and process the refund. You will be notified once it's resolved.",
                 'type' => 'cancelled',
-                'link' => '/user/project?type=cancelled',
+                'link' => '/user/project?type=ongoing',
                 'reference_id' => $application->project_id,
             ]);
 
+            // Notify the client that cancellation is in progress
             Notification::create([
                 'user_id' => $project->user_id,
-                'title' => 'Project cancelled',
-                'message' => 'You have cancelled the project.',
+                'title' => 'Cancellation In Progress ⏳',
+                'message' => "Your cancellation request for \"{$project->title}\" has been submitted. The admin will review and process the refund. You will be notified once it's resolved.",
                 'type' => 'cancelled',
-                'link' => '/user/project?type=cancelled',
+                'link' => '/user/project?type=my-projects',
                 'reference_id' => $project->id,
             ]);
 
+            // ✅ Send email notification to admin
+            try {
+                $client = User::find($project->user_id);
+                $freelancer = User::find($application->user_id);
+                $adminEmail = config('mail.admin_email', 'no-reply@thecodehelper.com');
+
+                Mail::send('emails.cancellation-request-admin', [
+                    'project_title' => $project->title,
+                    'project_id' => $project->id,
+                    'client_name' => $client->first_name ?? 'Client',
+                    'client_email' => $client->email ?? '',
+                    'freelancer_name' => $freelancer->first_name ?? 'Freelancer',
+                    'freelancer_email' => $freelancer->email ?? '',
+                    'cancel_reason' => request()->cancel_reason ?? 'No reason provided',
+                    'amount' => $application->total_amount ?? $project->budget,
+                    'admin_url' => url(guardName() . '/cancellation-requests'),
+                ], function ($message) use ($adminEmail) {
+                    $message->to($adminEmail)
+                        ->subject('🚨 New Cancellation Request - The Code Helper');
+                });
+            } catch (\Throwable $emailError) {
+                \Log::error('Cancel: admin email failed', ['error' => $emailError->getMessage()]);
+            }
+
             DB::commit();
-            return response()->json(['status' => true, 'message' => 'Project cancelled successfully.']);
+            return response()->json(['status' => true, 'message' => 'Your cancellation request has been submitted. The admin will review and process the refund.']);
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Cancel error', ['error' => $e->getMessage(), 'application_id' => $application_id]);
