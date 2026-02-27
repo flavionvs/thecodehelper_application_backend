@@ -11,19 +11,6 @@ Route::group(['middleware' => ['api']], function($router) {
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
 
-    // Temporary: clear all caches (remove after use)
-    Route::get('clear-cache', function () {
-        try {
-            \Artisan::call('view:clear');
-            \Artisan::call('cache:clear');
-            \Artisan::call('config:clear');
-            \Artisan::call('route:clear');
-            return response()->json(['status' => true, 'output' => 'All caches cleared']);
-        } catch (\Throwable $e) {
-            return response()->json(['status' => false, 'error' => $e->getMessage()]);
-        }
-    });
-
     Route::post('filter', 'API\ApiController@filter');
     Route::get('category', 'API\ApiController@category');
 
