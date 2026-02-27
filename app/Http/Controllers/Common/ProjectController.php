@@ -248,13 +248,17 @@ class ProjectController extends Controller
                         return response()->json(['status' => false, 'message' => 'Stripe transfer failed: ' . $transfer['message']]);
                     }
 
+                    $origPaymentIntentId = $originalPayment->paymentIntentId ?? null;
+
                     // Record payment to freelancer
                     Payment::create([
                         'application_id' => $application->id,
                         'user_id' => $application->user_id,
                         'amount' => $application->amount,
+                        'paymentIntentId' => $origPaymentIntentId,
                         'paymentStatus' => 'succeeded',
                         'stripe_transfer_id' => $transfer['stripe_transfer_id'],
+                        'currency' => $transfer['currency'] ?? null,
                     ]);
 
                     // Record debit from client
@@ -262,7 +266,9 @@ class ProjectController extends Controller
                         'application_id' => $application->id,
                         'user_id' => $project->user_id,
                         'amount' => -1 * ($application->total_amount ?? $application->amount),
+                        'paymentIntentId' => $origPaymentIntentId,
                         'paymentStatus' => 'succeeded',
+                        'currency' => $transfer['currency'] ?? null,
                     ]);
                 }
 
