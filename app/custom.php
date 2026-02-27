@@ -122,8 +122,6 @@ function transfer($stripe_account_id, $amount, $sourceTransaction = null){
         return [
             'status' => true,
             'stripe_transfer_id' => $transfer->id,
-            'currency' => $currency,
-            'amount_cents' => $amountCents,
         ];
 
     } catch (\Stripe\Exception\ApiErrorException $e) {

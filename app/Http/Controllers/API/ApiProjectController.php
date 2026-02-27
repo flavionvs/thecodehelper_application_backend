@@ -1080,26 +1080,19 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => $transfer['message']]);
             }
 
-            // Get the original paymentIntentId for reference
-            $origPaymentIntentId = $originalPayment->paymentIntentId ?? null;
-
             Payment::create([
                 'application_id' => $appPk,
                 'user_id' => $application->user_id,
                 'amount' => $application->amount,
-                'paymentIntentId' => $origPaymentIntentId,
                 'paymentStatus' => 'succeeded',
                 'stripe_transfer_id' => $transfer['stripe_transfer_id'],
-                'currency' => $transfer['currency'] ?? null,
             ]);
 
             Payment::create([
                 'application_id' => $appPk,
                 'user_id' => authId(),
                 'amount' => -$application->amount,
-                'paymentIntentId' => $origPaymentIntentId,
                 'paymentStatus' => 'succeeded',
-                'currency' => $transfer['currency'] ?? null,
             ]);
 
             Notification::create([

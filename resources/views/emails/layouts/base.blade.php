@@ -52,9 +52,9 @@
                                         <a href="https://thecodehelper.com" target="_blank" style="text-decoration: none;">
                                             <img src="https://thecodehelper-api.azurewebsites.net/images/logo.png" 
                                                  alt="The Code Helper" 
-                                                 width="160" 
-                                                 height="auto"
-                                                 style="display: block; width: 160px; max-width: 160px; height: auto; border: 0;" />
+                                                 width="150" 
+                                                 height="150"
+                                                 style="display: block; width: 150px; max-width: 150px; height: auto; border: 0;" />
                                         </a>
                                     </td>
                                 </tr>

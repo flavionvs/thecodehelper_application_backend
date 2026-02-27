@@ -11,16 +11,6 @@ Route::group(['middleware' => ['api']], function($router) {
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
 
-    // Temporary: run pending migrations (remove after use)
-    Route::get('run-migrate', function () {
-        try {
-            \Artisan::call('migrate', ['--force' => true]);
-            return response()->json(['status' => true, 'output' => \Artisan::output()]);
-        } catch (\Throwable $e) {
-            return response()->json(['status' => false, 'error' => $e->getMessage()]);
-        }
-    });
-    
     Route::post('filter', 'API\ApiController@filter');
     Route::get('category', 'API\ApiController@category');
 

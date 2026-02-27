@@ -861,7 +861,6 @@ class ApiController extends Controller
                         'paymentStatus'   => 'succeeded',
                         'paymentDetails'  => json_encode($session),
                         'stripe_transfer_id' => null,
-                        'currency'        => $session->currency ?? 'usd',
                     ]);
                 }
 

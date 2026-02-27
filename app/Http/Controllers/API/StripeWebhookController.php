@@ -151,7 +151,6 @@ class StripeWebhookController extends Controller
                             'paymentStatus'  => $intent->status ?? 'succeeded',
                             'paymentDetails' => json_encode($intent),
                             'stripe_transfer_id' => null,
-                            'currency'       => $intent->currency ?? 'usd',
                         ]);
                     } else {
                         // Keep payment synced (idempotent update)
@@ -361,7 +360,6 @@ class StripeWebhookController extends Controller
                             'paymentStatus'  => 'succeeded',
                             'paymentDetails' => json_encode($session),
                             'stripe_transfer_id' => null,
-                            'currency'       => $session->currency ?? 'usd',
                         ]);
                     }
 
