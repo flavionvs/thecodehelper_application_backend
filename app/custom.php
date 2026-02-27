@@ -31,9 +31,58 @@ function transfer($stripe_account_id, $amount, $sourceTransaction = null){
             return ['status' => false, 'message' => 'Transfer amount must be greater than zero.'];
         }
 
+        // Detect the correct currency from the source charge's balance transaction.
+        // Stripe settles charges in the platform's default currency (e.g. NZD),
+        // even if the charge was presented in USD. The transfer currency MUST match
+        // the settlement currency, not the presentment currency.
+        $currency = null;
+
+        if ($sourceTransaction) {
+            try {
+                $charge = \Stripe\Charge::retrieve($sourceTransaction);
+                if ($charge->balance_transaction) {
+                    $bt = \Stripe\BalanceTransaction::retrieve($charge->balance_transaction);
+                    $currency = $bt->currency; // e.g. 'nzd'
+                    \Log::info('Detected settlement currency from balance transaction', [
+                        'charge' => $sourceTransaction,
+                        'balance_transaction' => $charge->balance_transaction,
+                        'currency' => $currency,
+                    ]);
+
+                    // Recalculate amount in settlement currency if different from presentment
+                    if ($currency !== $charge->currency && $bt->exchange_rate) {
+                        $amountCents = (int) round($amountCents * $bt->exchange_rate);
+                        \Log::info('Converted transfer amount to settlement currency', [
+                            'original_currency' => $charge->currency,
+                            'settlement_currency' => $currency,
+                            'exchange_rate' => $bt->exchange_rate,
+                            'converted_amount_cents' => $amountCents,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('Could not detect settlement currency from charge', [
+                    'charge' => $sourceTransaction,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Fallback: use the platform account's default currency
+        if (!$currency) {
+            try {
+                $platformAccount = \Stripe\Account::retrieve();
+                $currency = $platformAccount->default_currency ?? 'usd';
+                \Log::info('Using platform default currency', ['currency' => $currency]);
+            } catch (\Throwable $e) {
+                $currency = 'usd';
+                \Log::warning('Could not retrieve platform currency, defaulting to usd');
+            }
+        }
+
         $transferData = [
             'amount' => $amountCents,
-            'currency' => 'usd',
+            'currency' => $currency,
             'destination' => $stripe_account_id,
             'description' => 'Payment for completed project',
         ];
@@ -46,21 +95,23 @@ function transfer($stripe_account_id, $amount, $sourceTransaction = null){
                 'charge' => $sourceTransaction,
                 'destination' => $stripe_account_id,
                 'amount_cents' => $amountCents,
+                'currency' => $currency,
             ]);
         } else {
             // No source_transaction — log a warning and check balance as a safety net
             $balance = \Stripe\Balance::retrieve();
-            $availableUsd = collect($balance->available)->firstWhere('currency', 'usd')->amount ?? 0;
+            $available = collect($balance->available)->firstWhere('currency', $currency)->amount ?? 0;
 
             \Log::info('Transfer without source_transaction', [
-                'available_cents' => $availableUsd,
+                'available_cents' => $available,
                 'required_cents' => $amountCents,
+                'currency' => $currency,
                 'destination' => $stripe_account_id,
             ]);
 
-            if ($availableUsd < $amountCents) {
+            if ($available < $amountCents) {
                 \Log::warning('Low platform balance — attempting transfer anyway', [
-                    'available_cents' => $availableUsd,
+                    'available_cents' => $available,
                     'required_cents' => $amountCents,
                 ]);
             }
