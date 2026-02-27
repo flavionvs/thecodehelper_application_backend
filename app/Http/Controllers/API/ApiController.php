@@ -924,7 +924,6 @@ class ApiController extends Controller
                                 'client_id' => $project->user_id,
                             ]);
                         }
-                        }
                     } catch (\Throwable $e) {
                         \Log::error('[VerifyCheckout] Email failed', ['error' => $e->getMessage()]);
                     }
@@ -932,7 +931,6 @@ class ApiController extends Controller
 
                 return [
                     'updated' => true,
-                    'already_paid' => $alreadyPaid,
                     'project_id' => $project->id,
                     'project_status' => $project->status,
                 ];
