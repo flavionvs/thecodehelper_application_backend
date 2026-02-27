@@ -11,27 +11,6 @@ Route::group(['middleware' => ['api']], function($router) {
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
 
-    // Temp: test email + cache clear (REMOVE after verification)
-    Route::get('test-email', function () {
-        try {
-            // Clear all caches first
-            \Artisan::call('view:clear');
-            \Artisan::call('cache:clear');
-
-            // Send test email using the welcome template (uses base layout)
-            Mail::send('emails.welcome', [
-                'name' => 'Ranjan',
-            ], function ($message) {
-                $message->to('ranjans838@gmail.com')
-                    ->subject('TEST - Logo Removal Verification');
-            });
-
-            return response()->json(['status' => true, 'message' => 'Test email sent to ranjans838@gmail.com (caches cleared first)']);
-        } catch (\Throwable $e) {
-            return response()->json(['status' => false, 'error' => $e->getMessage()]);
-        }
-    });
-
     Route::post('filter', 'API\ApiController@filter');
     Route::get('category', 'API\ApiController@category');
 
