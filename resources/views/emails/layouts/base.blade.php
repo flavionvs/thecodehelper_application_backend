@@ -43,25 +43,6 @@
                 <!-- Email Container -->
                 <table border="0" cellpadding="0" cellspacing="0" width="600" style="max-width: 600px;">
                     
-                    <!-- Logo Header -->
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table border="0" cellpadding="0" cellspacing="0">
-                                <tr>
-                                    <td align="center">
-                                        <a href="https://thecodehelper.com" target="_blank" style="text-decoration: none;">
-                                            <img src="https://thecodehelper-api.azurewebsites.net/images/logo.png" 
-                                                 alt="The Code Helper" 
-                                                 width="150" 
-                                                 height="150"
-                                                 style="display: block; width: 150px; max-width: 150px; height: auto; border: 0;" />
-                                        </a>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                    
                     <!-- Email Body -->
                     <tr>
                         <td align="center">
