@@ -219,7 +219,30 @@ class ProjectController extends Controller
                 $freelancer = User::find($application->user_id);
 
                 if ($freelancer && $freelancer->stripe_account_id && $application->amount > 0) {
-                    $transfer = transfer($freelancer->stripe_account_id, $application->amount);
+                    // Find original charge to link the transfer (avoids "insufficient balance")
+                    $sourceTransaction = null;
+                    try {
+                        $originalPayment = Payment::where('application_id', $application->id)
+                            ->where('paymentStatus', 'succeeded')
+                            ->whereNotNull('paymentIntentId')
+                            ->first();
+
+                        if ($originalPayment && $originalPayment->paymentIntentId) {
+                            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+                            $intent = \Stripe\PaymentIntent::retrieve($originalPayment->paymentIntentId);
+                            $sourceTransaction = $intent->latest_charge ?? null;
+                            \Log::info('[processCancellation] Found source charge', [
+                                'payment_intent' => $originalPayment->paymentIntentId,
+                                'charge' => $sourceTransaction,
+                            ]);
+                        }
+                    } catch (\Throwable $e) {
+                        \Log::warning('[processCancellation] Could not retrieve source charge', [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+
+                    $transfer = transfer($freelancer->stripe_account_id, $application->amount, $sourceTransaction);
                     if (!$transfer['status']) {
                         DB::rollBack();
                         return response()->json(['status' => false, 'message' => 'Stripe transfer failed: ' . $transfer['message']]);

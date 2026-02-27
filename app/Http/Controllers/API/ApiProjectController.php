@@ -831,15 +831,18 @@ class ApiProjectController extends Controller
             }
 
             // ✅ Flip project (THIS is the goal)
-            $alreadyPaid = ($proj->payment_status === 'paid');
             $proj->payment_status = 'paid';
             $proj->status = 'in_progress';
             $proj->selected_application_id = $appPk; // ✅ always stable id
             $proj->save();
 
-            // ✅ Notifications should never break flow
-            // Skip notifications if project was already paid (payment() or webhook already sent them)
-            if (!$alreadyPaid) {
+            // ✅ Notification-based dedup — more reliable than $alreadyPaid flag
+            $notifAlreadySent = Notification::where('reference_id', $proj->id)
+                ->where('type', 'approved')
+                ->where('user_id', $applied->user_id)
+                ->exists();
+
+            if (!$notifAlreadySent) {
                 try {
                     Notification::create([
                         'user_id' => $applied->user_id,
@@ -1048,7 +1051,30 @@ class ApiProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'The freelancer has not connected their Stripe account yet. Payout cannot be processed. Please contact support or ask the freelancer to connect their account.']);
             }
 
-            $transfer = transfer($freelancer->stripe_account_id, $application->amount);
+            // ✅ Find original charge to link the transfer (avoids "insufficient balance" errors)
+            $sourceTransaction = null;
+            try {
+                $originalPayment = Payment::where('application_id', $appPk)
+                    ->where('paymentStatus', 'succeeded')
+                    ->whereNotNull('paymentIntentId')
+                    ->first();
+
+                if ($originalPayment && $originalPayment->paymentIntentId) {
+                    \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+                    $intent = \Stripe\PaymentIntent::retrieve($originalPayment->paymentIntentId);
+                    $sourceTransaction = $intent->latest_charge ?? null;
+                    \Log::info('[acceptCompleted] Found source charge', [
+                        'payment_intent' => $originalPayment->paymentIntentId,
+                        'charge' => $sourceTransaction,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('[acceptCompleted] Could not retrieve source charge, transfer will proceed without it', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $transfer = transfer($freelancer->stripe_account_id, $application->amount, $sourceTransaction);
             if (!$transfer['status']) {
                 DB::rollBack();
                 return response()->json(['status' => false, 'message' => $transfer['message']]);

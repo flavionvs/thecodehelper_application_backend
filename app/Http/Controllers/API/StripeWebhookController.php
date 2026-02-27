@@ -167,7 +167,6 @@ class StripeWebhookController extends Controller
                     }
 
                     // Update project columns (only real columns)
-                    $alreadyPaid = ($project->payment_status === 'paid');
                     $project->payment_status = 'paid';
                     $project->status = 'in_progress';
 
@@ -176,8 +175,13 @@ class StripeWebhookController extends Controller
 
                     $project->save();
 
-                    // ✅ Send notifications + emails to both parties (skip if already sent)
-                    if (!$alreadyPaid) {
+                    // ✅ Notification-based dedup (more reliable than $alreadyPaid)
+                    $notifAlreadySent = Notification::where('reference_id', $project->id)
+                        ->where('type', 'approved')
+                        ->where('user_id', $application->user_id)
+                        ->exists();
+
+                    if (!$notifAlreadySent) {
                         try {
                             // Notify the freelancer that payment received and to start work
                             Notification::create([
@@ -212,6 +216,10 @@ class StripeWebhookController extends Controller
                             if ($freelancer && $client) {
                                 EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
                                 EmailService::sendPaymentSuccessful($client, $project, $freelancer, $application->amount ?? $project->budget);
+                                Log::info('[StripeWebhook] PI handler emails sent', [
+                                    'freelancer' => $freelancer->email,
+                                    'client' => $client->email,
+                                ]);
                             }
                         } catch (\Throwable $emailError) {
                             Log::error('[StripeWebhook] Email failed in PI handler', [
@@ -363,14 +371,18 @@ class StripeWebhookController extends Controller
                     }
 
                     // Update project
-                    $alreadyPaid = ($project->payment_status === 'paid');
                     $project->payment_status = 'paid';
                     $project->status = 'in_progress';
                     $project->selected_application_id = $appIdInt;
                     $project->save();
 
-                    // Notifications + emails (skip if already sent)
-                    if (!$alreadyPaid) {
+                    // ✅ Notification-based dedup (more reliable than $alreadyPaid)
+                    $notifAlreadySent = Notification::where('reference_id', $project->id)
+                        ->where('type', 'approved')
+                        ->where('user_id', $application->user_id)
+                        ->exists();
+
+                    if (!$notifAlreadySent) {
                         try {
                             Notification::create([
                                 'user_id' => $application->user_id,
@@ -392,13 +404,17 @@ class StripeWebhookController extends Controller
                             Log::error('[StripeWebhook] Checkout notification failed', ['error' => $e->getMessage()]);
                         }
 
-                        // Send emails to both parties (same as updateApplicationStatus)
+                        // Send emails to both parties
                         try {
                             $freelancer = User::find($application->user_id);
                             $client = User::find($project->user_id);
                             if ($freelancer && $client) {
                                 EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
                                 EmailService::sendPaymentSuccessful($client, $project, $freelancer, $application->amount ?? $project->budget);
+                                Log::info('[StripeWebhook] Checkout emails sent', [
+                                    'freelancer' => $freelancer->email,
+                                    'client' => $client->email,
+                                ]);
                             }
                         } catch (\Throwable $e) {
                             Log::error('[StripeWebhook] Checkout email failed', ['error' => $e->getMessage()]);

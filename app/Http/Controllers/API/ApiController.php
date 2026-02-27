@@ -872,14 +872,20 @@ class ApiController extends Controller
                 }
 
                 // Update project
-                $alreadyPaid = ($project->payment_status === 'paid');
                 $project->payment_status = 'paid';
                 $project->status = 'in_progress';
                 $project->selected_application_id = $appIdInt;
                 $project->save();
 
-                // Send notifications + emails ONLY if not already sent
-                if (!$alreadyPaid) {
+                // ✅ Notification-based dedup — more reliable than $alreadyPaid flag
+                // If webhook already committed notifications, this check prevents duplicates.
+                // If webhook hasn't run or failed before sending, this ensures they ARE sent.
+                $notifAlreadySent = Notification::where('reference_id', $project->id)
+                    ->where('type', 'approved')
+                    ->where('user_id', $application->user_id)
+                    ->exists();
+
+                if (!$notifAlreadySent) {
                     try {
                         Notification::create([
                             'user_id' => $application->user_id,
@@ -907,6 +913,17 @@ class ApiController extends Controller
                         if ($freelancer && $client) {
                             EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
                             EmailService::sendPaymentSuccessful($client, $project, $freelancer, $application->amount ?? $project->budget);
+                            \Log::info('[VerifyCheckout] Emails sent successfully', [
+                                'freelancer' => $freelancer->email,
+                                'client' => $client->email,
+                                'project_id' => $project->id,
+                            ]);
+                        } else {
+                            \Log::warning('[VerifyCheckout] Could not find users for email', [
+                                'freelancer_id' => $application->user_id,
+                                'client_id' => $project->user_id,
+                            ]);
+                        }
                         }
                     } catch (\Throwable $e) {
                         \Log::error('[VerifyCheckout] Email failed', ['error' => $e->getMessage()]);
