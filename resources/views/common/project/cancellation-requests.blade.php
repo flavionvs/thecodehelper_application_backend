@@ -34,26 +34,53 @@
    </div>
 </div>
 
-<!-- Refund Confirmation Modal -->
-<div class="modal fade" id="refundModal" tabindex="-1" role="dialog">
+<!-- Refund Client Modal -->
+<div class="modal fade" id="refundClientModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Process Refund & Cancel Project</h5>
-                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Refund Client & Cancel Project</h5>
+                <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
             </div>
             <div class="modal-body">
-                <p>Are you sure you want to process the refund and cancel this project?</p>
+                <p>This will issue a <strong>full refund</strong> back to the client's original payment method via Stripe.</p>
                 <p><strong>Project:</strong> <span id="refund-project-name"></span></p>
-                <p><strong>Amount to transfer to freelancer:</strong> $<span id="refund-amount"></span></p>
+                <p><strong>Amount to refund:</strong> $<span id="refund-amount"></span></p>
+                <p><strong>Refund to:</strong> <span id="refund-client-name"></span> (<span id="refund-client-email"></span>)</p>
                 <div class="form-group">
                     <label>Admin Notes (optional)</label>
-                    <textarea id="admin-notes" class="form-control" rows="3" placeholder="Add any admin notes..."></textarea>
+                    <textarea id="refund-admin-notes" class="form-control" rows="3" placeholder="Add any admin notes..."></textarea>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-danger" id="confirm-refund-btn">Process Refund & Cancel</button>
+                <button type="button" class="btn btn-success" id="confirm-refund-client-btn">Refund Client & Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pay Freelancer Modal -->
+<div class="modal fade" id="payFreelancerModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Pay Freelancer & Cancel Project</h5>
+                <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p>This will <strong>transfer the payment</strong> to the freelancer's Stripe account for work already done, and cancel the project.</p>
+                <p><strong>Project:</strong> <span id="transfer-project-name"></span></p>
+                <p><strong>Amount to transfer:</strong> $<span id="transfer-amount"></span></p>
+                <p><strong>Transfer to:</strong> <span id="transfer-freelancer-name"></span> (<span id="transfer-freelancer-email"></span>)</p>
+                <div class="form-group">
+                    <label>Admin Notes (optional)</label>
+                    <textarea id="transfer-admin-notes" class="form-control" rows="3" placeholder="Add any admin notes..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="confirm-pay-freelancer-btn">Pay Freelancer & Cancel</button>
             </div>
         </div>
     </div>
@@ -109,17 +136,19 @@
         });
     });
 
-    // Refund button click
-    $(document).on('click', '.refund-btn', function() {
+    // Refund Client button click
+    $(document).on('click', '.refund-client-btn', function() {
         currentProjectId = $(this).data('project-id');
         $('#refund-project-name').text($(this).data('project-name'));
         $('#refund-amount').text($(this).data('amount'));
-        $('#admin-notes').val('');
-        $('#refundModal').modal('show');
+        $('#refund-client-name').text($(this).data('client-name'));
+        $('#refund-client-email').text($(this).data('client-email'));
+        $('#refund-admin-notes').val('');
+        $('#refundClientModal').modal('show');
     });
 
-    // Confirm refund
-    $('#confirm-refund-btn').on('click', function() {
+    // Confirm Refund Client
+    $('#confirm-refund-client-btn').on('click', function() {
         var btn = $(this);
         btn.prop('disabled', true).text('Processing...');
         
@@ -128,11 +157,11 @@
             type: 'POST',
             data: {
                 _token: '{{ csrf_token() }}',
-                action: 'approve',
-                admin_notes: $('#admin-notes').val()
+                action: 'approve_refund',
+                admin_notes: $('#refund-admin-notes').val()
             },
             success: function(response) {
-                $('#refundModal').modal('hide');
+                $('#refundClientModal').modal('hide');
                 if (response.status) {
                     alert(response.message);
                     table.ajax.reload();
@@ -144,7 +173,49 @@
                 alert('Error processing refund: ' + (xhr.responseJSON?.message || 'Unknown error'));
             },
             complete: function() {
-                btn.prop('disabled', false).text('Process Refund & Cancel');
+                btn.prop('disabled', false).text('Refund Client & Cancel');
+            }
+        });
+    });
+
+    // Pay Freelancer button click
+    $(document).on('click', '.pay-freelancer-btn', function() {
+        currentProjectId = $(this).data('project-id');
+        $('#transfer-project-name').text($(this).data('project-name'));
+        $('#transfer-amount').text($(this).data('amount'));
+        $('#transfer-freelancer-name').text($(this).data('freelancer-name'));
+        $('#transfer-freelancer-email').text($(this).data('freelancer-email'));
+        $('#transfer-admin-notes').val('');
+        $('#payFreelancerModal').modal('show');
+    });
+
+    // Confirm Pay Freelancer
+    $('#confirm-pay-freelancer-btn').on('click', function() {
+        var btn = $(this);
+        btn.prop('disabled', true).text('Processing...');
+        
+        $.ajax({
+            url: '{{ url(guardName() . "/process-cancellation") }}/' + currentProjectId,
+            type: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                action: 'approve_transfer',
+                admin_notes: $('#transfer-admin-notes').val()
+            },
+            success: function(response) {
+                $('#payFreelancerModal').modal('hide');
+                if (response.status) {
+                    alert(response.message);
+                    table.ajax.reload();
+                } else {
+                    alert('Error: ' + response.message);
+                }
+            },
+            error: function(xhr) {
+                alert('Error processing transfer: ' + (xhr.responseJSON?.message || 'Unknown error'));
+            },
+            complete: function() {
+                btn.prop('disabled', false).text('Pay Freelancer & Cancel');
             }
         });
     });

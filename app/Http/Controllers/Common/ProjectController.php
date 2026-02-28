@@ -164,11 +164,21 @@ class ProjectController extends Controller
                 })
                 ->addColumn('action', function ($row) {
                     if ($row->project_status === 'cancellation_requested') {
-                        return '<button class="btn btn-sm btn-danger refund-btn" 
+                        return '<button class="btn btn-sm btn-success refund-client-btn mb-1" 
                                     data-project-id="' . $row->id . '" 
                                     data-project-name="' . htmlspecialchars($row->title) . '"
-                                    data-amount="' . number_format($row->amount ?? $row->budget, 2) . '">
-                                    Refund & Cancel
+                                    data-amount="' . number_format($row->amount ?? $row->budget, 2) . '"
+                                    data-client-name="' . htmlspecialchars($row->client_name) . '"
+                                    data-client-email="' . htmlspecialchars($row->client_email) . '">
+                                    Refund Client
+                                </button>
+                                <button class="btn btn-sm btn-primary pay-freelancer-btn mb-1" 
+                                    data-project-id="' . $row->id . '" 
+                                    data-project-name="' . htmlspecialchars($row->title) . '"
+                                    data-amount="' . number_format($row->amount ?? $row->budget, 2) . '"
+                                    data-freelancer-name="' . htmlspecialchars($row->freelancer_name) . '"
+                                    data-freelancer-email="' . htmlspecialchars($row->freelancer_email) . '">
+                                    Pay Freelancer
                                 </button>
                                 <button class="btn btn-sm btn-secondary reject-btn mt-1" 
                                     data-project-id="' . $row->id . '" 
@@ -212,83 +222,68 @@ class ProjectController extends Controller
                 return response()->json(['status' => false, 'message' => 'No approved application found for this project.']);
             }
 
-            $action = $request->input('action'); // 'approve' or 'reject'
+            $action = $request->input('action'); // 'approve_refund', 'approve_transfer', or 'reject'
 
-            if ($action === 'approve') {
-                // ✅ Transfer freelancer's earned amount
-                $freelancer = User::find($application->user_id);
+            if ($action === 'approve_refund') {
+                // ✅ OPTION 1: Refund the client via Stripe Refund API
+                $originalPayment = Payment::where('application_id', $application->id)
+                    ->where('paymentStatus', 'succeeded')
+                    ->whereNotNull('paymentIntentId')
+                    ->first();
 
-                if ($freelancer && $freelancer->stripe_account_id && $application->amount > 0) {
-                    // Find original charge to link the transfer (avoids "insufficient balance")
-                    $sourceTransaction = null;
-                    try {
-                        $originalPayment = Payment::where('application_id', $application->id)
-                            ->where('paymentStatus', 'succeeded')
-                            ->whereNotNull('paymentIntentId')
-                            ->first();
-
-                        if ($originalPayment && $originalPayment->paymentIntentId) {
-                            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-                            $intent = \Stripe\PaymentIntent::retrieve($originalPayment->paymentIntentId);
-                            $sourceTransaction = $intent->latest_charge ?? null;
-                            \Log::info('[processCancellation] Found source charge', [
-                                'payment_intent' => $originalPayment->paymentIntentId,
-                                'charge' => $sourceTransaction,
-                            ]);
-                        }
-                    } catch (\Throwable $e) {
-                        \Log::warning('[processCancellation] Could not retrieve source charge', [
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
-
-                    $transfer = transfer($freelancer->stripe_account_id, $application->amount, $sourceTransaction);
-                    if (!$transfer['status']) {
-                        DB::rollBack();
-                        return response()->json(['status' => false, 'message' => 'Stripe transfer failed: ' . $transfer['message']]);
-                    }
-
-                    // Record payment to freelancer
-                    Payment::create([
-                        'application_id' => $application->id,
-                        'user_id' => $application->user_id,
-                        'amount' => $application->amount,
-                        'paymentStatus' => 'succeeded',
-                        'stripe_transfer_id' => $transfer['stripe_transfer_id'],
-                    ]);
-
-                    // Record debit from client
-                    Payment::create([
-                        'application_id' => $application->id,
-                        'user_id' => $project->user_id,
-                        'amount' => -1 * ($application->total_amount ?? $application->amount),
-                        'paymentStatus' => 'succeeded',
-                    ]);
+                if (!$originalPayment || !$originalPayment->paymentIntentId) {
+                    DB::rollBack();
+                    return response()->json(['status' => false, 'message' => 'Original payment record not found. Cannot process refund.']);
                 }
 
-                // Update application status
-                $application->status = 'Cancelled';
-                $application->save();
+                try {
+                    \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
 
-                ApplicationStatus::updateOrCreate([
+                    $refund = \Stripe\Refund::create([
+                        'payment_intent' => $originalPayment->paymentIntentId,
+                    ]);
+
+                    \Log::info('[processCancellation] Stripe refund to client created', [
+                        'refund_id' => $refund->id,
+                        'payment_intent' => $originalPayment->paymentIntentId,
+                        'amount' => $refund->amount,
+                        'currency' => $refund->currency,
+                        'status' => $refund->status,
+                    ]);
+                } catch (\Stripe\Exception\ApiErrorException $e) {
+                    DB::rollBack();
+                    \Log::error('[processCancellation] Stripe refund failed', [
+                        'error' => $e->getMessage(),
+                        'payment_intent' => $originalPayment->paymentIntentId,
+                    ]);
+                    return response()->json(['status' => false, 'message' => 'Stripe refund failed: ' . $e->getMessage()]);
+                }
+
+                // Record refund in payments table
+                Payment::create([
                     'application_id' => $application->id,
-                    'status' => 'Cancelled',
+                    'user_id' => $project->user_id,
+                    'amount' => -1 * $originalPayment->amount,
+                    'paymentStatus' => 'refunded',
+                    'paymentIntentId' => $originalPayment->paymentIntentId,
                 ]);
 
-                // Update project status
-                DB::table('projects')
-                    ->where('id', $project->id)
-                    ->update([
-                        'status' => 'cancelled',
-                        'payment_status' => 'refunded',
-                        'updated_at' => now(),
-                    ]);
+                // Update statuses
+                $application->status = 'Cancelled';
+                $application->save();
+                ApplicationStatus::updateOrCreate(['application_id' => $application->id, 'status' => 'Cancelled']);
+
+                DB::table('projects')->where('id', $project->id)->update([
+                    'status' => 'cancelled',
+                    'payment_status' => 'refunded',
+                    'updated_at' => now(),
+                ]);
 
                 // Notify freelancer
                 Notification::create([
                     'user_id' => $application->user_id,
                     'title' => 'Project Cancelled ❌',
-                    'message' => "The project \"{$project->title}\" has been cancelled and the refund has been processed. Your payment has been transferred.",
+                    'message' => "The project \"{$project->title}\" has been cancelled. The client has been refunded.",
                     'type' => 'cancelled',
                     'link' => '/user/project?type=cancelled',
                     'reference_id' => $project->id,
@@ -298,14 +293,103 @@ class ProjectController extends Controller
                 Notification::create([
                     'user_id' => $project->user_id,
                     'title' => 'Cancellation Approved ✅',
-                    'message' => "Your cancellation request for \"{$project->title}\" has been approved and the refund has been processed.",
+                    'message' => "Your cancellation request for \"{$project->title}\" has been approved and the refund has been processed to your original payment method.",
                     'type' => 'cancelled',
                     'link' => '/user/project?type=cancelled',
                     'reference_id' => $project->id,
                 ]);
 
                 DB::commit();
-                return response()->json(['status' => true, 'message' => 'Project cancelled and refund processed successfully.']);
+                return response()->json(['status' => true, 'message' => 'Project cancelled and refund to client processed successfully.']);
+
+            } elseif ($action === 'approve_transfer') {
+                // ✅ OPTION 2: Transfer payment to the freelancer for work done
+                $freelancer = User::find($application->user_id);
+
+                if (!$freelancer || !$freelancer->stripe_account_id) {
+                    DB::rollBack();
+                    return response()->json(['status' => false, 'message' => 'Freelancer does not have a Stripe account connected.']);
+                }
+
+                if (!$application->amount || $application->amount <= 0) {
+                    DB::rollBack();
+                    return response()->json(['status' => false, 'message' => 'No transferable amount found on the application.']);
+                }
+
+                // Find original charge to link the transfer (avoids "insufficient balance")
+                $sourceTransaction = null;
+                try {
+                    $originalPayment = Payment::where('application_id', $application->id)
+                        ->where('paymentStatus', 'succeeded')
+                        ->whereNotNull('paymentIntentId')
+                        ->first();
+
+                    if ($originalPayment && $originalPayment->paymentIntentId) {
+                        \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+                        $intent = \Stripe\PaymentIntent::retrieve($originalPayment->paymentIntentId);
+                        $sourceTransaction = $intent->latest_charge ?? null;
+                        \Log::info('[processCancellation] Found source charge for freelancer transfer', [
+                            'payment_intent' => $originalPayment->paymentIntentId,
+                            'charge' => $sourceTransaction,
+                            'freelancer_id' => $freelancer->id,
+                            'freelancer_email' => $freelancer->email,
+                            'stripe_account_id' => $freelancer->stripe_account_id,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    \Log::warning('[processCancellation] Could not retrieve source charge', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                $transfer = transfer($freelancer->stripe_account_id, $application->amount, $sourceTransaction);
+                if (!$transfer['status']) {
+                    DB::rollBack();
+                    return response()->json(['status' => false, 'message' => 'Stripe transfer failed: ' . ($transfer['message'] ?? 'Unknown error')]);
+                }
+
+                // Record payment to freelancer
+                Payment::create([
+                    'application_id' => $application->id,
+                    'user_id' => $application->user_id,
+                    'amount' => $application->amount,
+                    'paymentStatus' => 'succeeded',
+                    'stripe_transfer_id' => $transfer['stripe_transfer_id'],
+                ]);
+
+                // Update statuses
+                $application->status = 'Cancelled';
+                $application->save();
+                ApplicationStatus::updateOrCreate(['application_id' => $application->id, 'status' => 'Cancelled']);
+
+                DB::table('projects')->where('id', $project->id)->update([
+                    'status' => 'cancelled',
+                    'payment_status' => 'transferred',
+                    'updated_at' => now(),
+                ]);
+
+                // Notify freelancer
+                Notification::create([
+                    'user_id' => $application->user_id,
+                    'title' => 'Payment Received ✅',
+                    'message' => "The project \"{$project->title}\" has been cancelled, but your payment has been transferred for the work completed.",
+                    'type' => 'approved',
+                    'link' => '/user/project?type=cancelled',
+                    'reference_id' => $project->id,
+                ]);
+
+                // Notify client
+                Notification::create([
+                    'user_id' => $project->user_id,
+                    'title' => 'Cancellation Approved ✅',
+                    'message' => "Your cancellation request for \"{$project->title}\" has been approved. The payment has been transferred to the freelancer for work completed.",
+                    'type' => 'cancelled',
+                    'link' => '/user/project?type=cancelled',
+                    'reference_id' => $project->id,
+                ]);
+
+                DB::commit();
+                return response()->json(['status' => true, 'message' => 'Project cancelled and payment transferred to freelancer successfully.']);
 
             } elseif ($action === 'reject') {
                 // ✅ Reject: restore to in_progress
