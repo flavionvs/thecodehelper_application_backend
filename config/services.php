@@ -60,5 +60,16 @@ return [
         'api_key' => env('Send_Grid_API'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Blog API Key
+    |--------------------------------------------------------------------------
+    |
+    | API key for blog management endpoints (create/update/delete posts).
+    |
+    */
+
+    'blog_api_key' => env('BLOG_API_KEY'),
+
 ];
 

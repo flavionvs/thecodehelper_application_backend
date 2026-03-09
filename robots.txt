@@ -1,2 +1,5 @@
 User-agent: *
-Disallow:
+Disallow: /admin/
+Allow: /api/blog
+
+Sitemap: https://thecodehelper.com/sitemap.xml

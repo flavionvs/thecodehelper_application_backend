@@ -11,10 +11,23 @@ Route::group(['middleware' => ['api']], function($router) {
     Route::post('stripe/webhook', 'API\StripeWebhookController@handle');
     Route::get('message', 'API\ApiController@message');
 
+    // ✅ Blog public routes (no auth)
+    Route::get('blog', 'API\ApiBlogController@index');
+    Route::get('blog/categories', 'API\ApiBlogController@categories');
+    Route::get('blog/sitemap', 'API\ApiBlogController@sitemap');
+    Route::get('blog/{slug}', 'API\ApiBlogController@show');
+
     Route::post('filter', 'API\ApiController@filter');
     Route::get('category', 'API\ApiController@category');
 
     Route::get('project/detail/{project_id}', 'API\ApiController@projectDetail');
+    // ✅ Blog management routes (API key auth)
+    Route::group(['middleware' => ['blog.apikey']], function () {
+        Route::post('blog', 'API\ApiBlogController@store');
+        Route::put('blog/{id}', 'API\ApiBlogController@update');
+        Route::delete('blog/{id}', 'API\ApiBlogController@destroy');
+    });
+
     Route::group(['middleware' => ['jwt.verify']], function($router) {
 
         Route::get('dashboard', 'API\ApiController@dashboard');

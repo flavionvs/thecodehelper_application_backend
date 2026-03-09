@@ -19,6 +19,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Scopes\ActiveScope;
+use App\Services\EmailService;
 // use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
