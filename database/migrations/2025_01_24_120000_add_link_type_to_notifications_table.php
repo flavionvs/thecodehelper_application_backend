@@ -14,9 +14,15 @@ class AddLinkTypeToNotificationsTable extends Migration
     public function up()
     {
         Schema::table('notifications', function (Blueprint $table) {
-            $table->string('type')->nullable()->after('message'); // e.g., 'payment', 'project', 'application', etc.
-            $table->string('link')->nullable()->after('type'); // URL or route path to navigate to
-            $table->unsignedBigInteger('reference_id')->nullable()->after('link'); // ID of related entity (project_id, application_id, etc.)
+            if (!Schema::hasColumn('notifications', 'type')) {
+                $table->string('type')->nullable()->after('message');
+            }
+            if (!Schema::hasColumn('notifications', 'link')) {
+                $table->string('link')->nullable()->after('type');
+            }
+            if (!Schema::hasColumn('notifications', 'reference_id')) {
+                $table->unsignedBigInteger('reference_id')->nullable()->after('link');
+            }
         });
     }
 
