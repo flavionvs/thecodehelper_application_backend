@@ -938,12 +938,13 @@ class ApiController extends Controller
                 'result' => $result,
             ]);
 
-            // ✅ Send emails AFTER transaction commits (keeps SMTP out of DB transaction)
-            if ($result['send_emails'] ?? false) {
+            // ✅ Send emails AFTER transaction commits — always attempt (duplicate email > no email)
+            if ($result['updated'] ?? false) {
                 try {
+                    $application->refresh();
                     $project = Project::find($result['project_id']);
-                    $freelancer = User::find($result['freelancer_user_id']);
-                    $client = $project ? User::find($result['client_user_id']) : null;
+                    $freelancer = User::find($result['freelancer_user_id'] ?? $application->user_id);
+                    $client = $project ? User::find($result['client_user_id'] ?? $project->user_id) : null;
                     if ($freelancer && $client && $project) {
                         $totalPaid = (float)($application->total_amount ?: $amount);
                         EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
@@ -955,8 +956,8 @@ class ApiController extends Controller
                         ]);
                     } else {
                         \Log::warning('[VerifyCheckout] Could not find users for email', [
-                            'freelancer_id' => $result['freelancer_user_id'] ?? null,
-                            'client_id' => $result['client_user_id'] ?? null,
+                            'freelancer_id' => $application->user_id,
+                            'client_id' => $project->user_id ?? null,
                         ]);
                     }
                 } catch (\Throwable $e) {

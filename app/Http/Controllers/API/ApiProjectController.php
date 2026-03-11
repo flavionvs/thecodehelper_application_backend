@@ -891,19 +891,30 @@ class ApiProjectController extends Controller
                         'reference_id' => $proj->id,
                     ]);
 
-                    // ✅ Send emails to both parties
-                    $freelancer = User::find($applied->user_id);
-                    $client = User::find($proj->user_id);
-                    if ($freelancer && $client) {
-                        EmailService::sendApplicationApproved($freelancer, $proj, $client, $applied->amount ?? $proj->budget);
-                        EmailService::sendPaymentSuccessful($client, $proj, $freelancer, $applied->amount ?? $proj->budget);
-                    }
+                    // Emails moved after DB::commit() below
                 } catch (\Throwable $e) {
                     \Log::error('[updateApplicationStatus] notification failed: ' . $e->getMessage());
                 }
             }
 
             DB::commit();
+
+            // ✅ Send emails AFTER commit — always attempt (duplicate email > no email)
+            try {
+                $freelancer = User::find($applied->user_id);
+                $client = User::find($proj->user_id);
+                if ($freelancer && $client) {
+                    $totalPaid = (float)($applied->total_amount ?: ($applied->amount ?? $proj->budget));
+                    EmailService::sendApplicationApproved($freelancer, $proj, $client, $applied->amount ?? $proj->budget);
+                    EmailService::sendPaymentSuccessful($client, $proj, $freelancer, $totalPaid);
+                    \Log::info('[updateApplicationStatus] emails sent', [
+                        'freelancer' => $freelancer->email,
+                        'client' => $client->email,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                \Log::error('[updateApplicationStatus] email failed: ' . $e->getMessage());
+            }
 
             \Log::info('[updateApplicationStatus] success', [
                 'appPk' => $appPk,

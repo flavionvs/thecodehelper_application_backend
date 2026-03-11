@@ -233,25 +233,24 @@ class StripeWebhookController extends Controller
                 return response()->json(['received' => true], 200);
             }
 
-            // ✅ Send emails AFTER transaction commits
-            if ($sendEmails) {
-                try {
-                    $project = Project::find($finalProjectLookupId);
-                    $freelancer = User::find($application->user_id);
-                    $client = $project ? User::find($project->user_id) : null;
-                    if ($freelancer && $client && $project) {
-                        $totalPaid = (float)($application->total_amount ?: $amount);
-                        EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
-                        EmailService::sendPaymentSuccessful($client, $project, $freelancer, $totalPaid);
-                        Log::info('[StripeWebhook] PI handler emails sent', [
-                            'freelancer' => $freelancer->email,
-                            'client' => $client->email,
-                            'total_paid' => $totalPaid,
-                        ]);
-                    }
-                } catch (\Throwable $e) {
-                    Log::error('[StripeWebhook] PI handler email failed', ['error' => $e->getMessage()]);
+            // ✅ Send emails AFTER transaction commits — always attempt
+            try {
+                $application->refresh();
+                $project = Project::find($finalProjectLookupId);
+                $freelancer = User::find($application->user_id);
+                $client = $project ? User::find($project->user_id) : null;
+                if ($freelancer && $client && $project) {
+                    $totalPaid = (float)($application->total_amount ?: $amount);
+                    EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
+                    EmailService::sendPaymentSuccessful($client, $project, $freelancer, $totalPaid);
+                    Log::info('[StripeWebhook] PI handler emails sent', [
+                        'freelancer' => $freelancer->email,
+                        'client' => $client->email,
+                        'total_paid' => $totalPaid,
+                    ]);
                 }
+            } catch (\Throwable $e) {
+                Log::error('[StripeWebhook] PI handler email failed', ['error' => $e->getMessage()]);
             }
 
             return response()->json(['received' => true], 200);
@@ -430,25 +429,29 @@ class StripeWebhookController extends Controller
                 ]);
             }
 
-            // ✅ Send emails AFTER transaction commits (keeps SMTP out of DB transaction)
-            if ($sendEmails) {
-                try {
-                    $project = Project::find($finalProjectId);
-                    $freelancer = User::find($application->user_id);
-                    $client = $project ? User::find($project->user_id) : null;
-                    if ($freelancer && $client && $project) {
-                        $totalPaid = (float)($application->total_amount ?: $amount);
-                        EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
-                        EmailService::sendPaymentSuccessful($client, $project, $freelancer, $totalPaid);
-                        Log::info('[StripeWebhook] Checkout emails sent', [
-                            'freelancer' => $freelancer->email,
-                            'client' => $client->email,
-                            'total_paid' => $totalPaid,
-                        ]);
-                    }
-                } catch (\Throwable $e) {
-                    Log::error('[StripeWebhook] Checkout email failed', ['error' => $e->getMessage()]);
+            // ✅ Send emails AFTER transaction commits — always attempt (duplicate email > no email)
+            try {
+                $application->refresh();
+                $project = Project::find($finalProjectId);
+                $freelancer = User::find($application->user_id);
+                $client = $project ? User::find($project->user_id) : null;
+                if ($freelancer && $client && $project) {
+                    $totalPaid = (float)($application->total_amount ?: $amount);
+                    EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
+                    EmailService::sendPaymentSuccessful($client, $project, $freelancer, $totalPaid);
+                    Log::info('[StripeWebhook] Checkout emails sent', [
+                        'freelancer' => $freelancer->email,
+                        'client' => $client->email,
+                        'total_paid' => $totalPaid,
+                    ]);
+                } else {
+                    Log::warning('[StripeWebhook] Checkout: users not found for email', [
+                        'freelancer_id' => $application->user_id,
+                        'client_id' => $project->user_id ?? null,
+                    ]);
                 }
+            } catch (\Throwable $e) {
+                Log::error('[StripeWebhook] Checkout email failed', ['error' => $e->getMessage()]);
             }
 
             return response()->json(['received' => true], 200);
