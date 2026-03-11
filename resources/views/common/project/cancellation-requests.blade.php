@@ -43,10 +43,27 @@
                 <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
             </div>
             <div class="modal-body">
-                <p>This will issue a <strong>full refund</strong> back to the client's original payment method via Stripe.</p>
+                <p>This will issue a <strong>partial refund</strong> back to the client's original payment method via Stripe, after deducting cancellation and processing fees.</p>
                 <p><strong>Project:</strong> <span id="refund-project-name"></span></p>
-                <p><strong>Amount to refund:</strong> $<span id="refund-amount"></span></p>
                 <p><strong>Refund to:</strong> <span id="refund-client-name"></span> (<span id="refund-client-email"></span>)</p>
+                <table class="table table-bordered table-sm mt-3 mb-3">
+                    <tr>
+                        <td>Total Amount</td>
+                        <td class="text-right">$<span id="refund-total-amount"></span></td>
+                    </tr>
+                    <tr class="text-danger">
+                        <td>Cancellation Fee (10%)</td>
+                        <td class="text-right">- $<span id="refund-cancellation-fee"></span></td>
+                    </tr>
+                    <tr class="text-danger">
+                        <td>Stripe Processing Fee</td>
+                        <td class="text-right">- $<span id="refund-stripe-fee"></span></td>
+                    </tr>
+                    <tr class="font-weight-bold bg-light">
+                        <td>Net Refund to Client</td>
+                        <td class="text-right text-success">$<span id="refund-net-amount"></span></td>
+                    </tr>
+                </table>
                 <div class="form-group">
                     <label>Admin Notes (optional)</label>
                     <textarea id="refund-admin-notes" class="form-control" rows="3" placeholder="Add any admin notes..."></textarea>
@@ -71,8 +88,36 @@
             <div class="modal-body">
                 <p>This will <strong>transfer the payment</strong> to the freelancer's Stripe account for work already done, and cancel the project.</p>
                 <p><strong>Project:</strong> <span id="transfer-project-name"></span></p>
-                <p><strong>Amount to transfer:</strong> $<span id="transfer-amount"></span></p>
                 <p><strong>Transfer to:</strong> <span id="transfer-freelancer-name"></span> (<span id="transfer-freelancer-email"></span>)</p>
+                
+                <div class="custom-control custom-checkbox mt-3 mb-3">
+                    <input type="checkbox" class="custom-control-input" id="deduct-fees-checkbox">
+                    <label class="custom-control-label" for="deduct-fees-checkbox">
+                        <strong>Deduct cancellation charges from freelancer</strong>
+                    </label>
+                </div>
+
+                <table class="table table-bordered table-sm mb-3" id="transfer-fee-table" style="display: none;">
+                    <tr>
+                        <td>Freelancer Amount</td>
+                        <td class="text-right">$<span id="transfer-full-amount"></span></td>
+                    </tr>
+                    <tr class="text-danger">
+                        <td>Cancellation Fee (10%)</td>
+                        <td class="text-right">- $<span id="transfer-cancellation-fee"></span></td>
+                    </tr>
+                    <tr class="text-danger">
+                        <td>Stripe Processing Fee</td>
+                        <td class="text-right">- $<span id="transfer-stripe-fee"></span></td>
+                    </tr>
+                    <tr class="font-weight-bold bg-light">
+                        <td>Net Transfer to Freelancer</td>
+                        <td class="text-right text-primary">$<span id="transfer-net-amount"></span></td>
+                    </tr>
+                </table>
+
+                <p id="transfer-no-deduction-text"><strong>Amount to transfer:</strong> $<span id="transfer-amount"></span></p>
+
                 <div class="form-group">
                     <label>Admin Notes (optional)</label>
                     <textarea id="transfer-admin-notes" class="form-control" rows="3" placeholder="Add any admin notes..."></textarea>
@@ -140,7 +185,10 @@
     $(document).on('click', '.refund-client-btn', function() {
         currentProjectId = $(this).data('project-id');
         $('#refund-project-name').text($(this).data('project-name'));
-        $('#refund-amount').text($(this).data('amount'));
+        $('#refund-total-amount').text(parseFloat($(this).data('total-amount')).toFixed(2));
+        $('#refund-cancellation-fee').text(parseFloat($(this).data('cancellation-fee')).toFixed(2));
+        $('#refund-stripe-fee').text(parseFloat($(this).data('stripe-fee')).toFixed(2));
+        $('#refund-net-amount').text(parseFloat($(this).data('refund-amount')).toFixed(2));
         $('#refund-client-name').text($(this).data('client-name'));
         $('#refund-client-email').text($(this).data('client-email'));
         $('#refund-admin-notes').val('');
@@ -181,12 +229,35 @@
     // Pay Freelancer button click
     $(document).on('click', '.pay-freelancer-btn', function() {
         currentProjectId = $(this).data('project-id');
+        var amount = parseFloat($(this).data('amount'));
+        var cancellationFee = parseFloat($(this).data('cancellation-fee'));
+        var stripeFee = parseFloat($(this).data('stripe-fee'));
+        var netAmount = Math.max(0, amount - cancellationFee - stripeFee);
+
         $('#transfer-project-name').text($(this).data('project-name'));
-        $('#transfer-amount').text($(this).data('amount'));
+        $('#transfer-amount').text(amount.toFixed(2));
+        $('#transfer-full-amount').text(amount.toFixed(2));
+        $('#transfer-cancellation-fee').text(cancellationFee.toFixed(2));
+        $('#transfer-stripe-fee').text(stripeFee.toFixed(2));
+        $('#transfer-net-amount').text(netAmount.toFixed(2));
         $('#transfer-freelancer-name').text($(this).data('freelancer-name'));
         $('#transfer-freelancer-email').text($(this).data('freelancer-email'));
         $('#transfer-admin-notes').val('');
+        $('#deduct-fees-checkbox').prop('checked', false);
+        $('#transfer-fee-table').hide();
+        $('#transfer-no-deduction-text').show();
         $('#payFreelancerModal').modal('show');
+    });
+
+    // Toggle fee deduction table in Pay Freelancer modal
+    $('#deduct-fees-checkbox').on('change', function() {
+        if ($(this).is(':checked')) {
+            $('#transfer-fee-table').show();
+            $('#transfer-no-deduction-text').hide();
+        } else {
+            $('#transfer-fee-table').hide();
+            $('#transfer-no-deduction-text').show();
+        }
     });
 
     // Confirm Pay Freelancer
@@ -200,7 +271,8 @@
             data: {
                 _token: '{{ csrf_token() }}',
                 action: 'approve_transfer',
-                admin_notes: $('#transfer-admin-notes').val()
+                admin_notes: $('#transfer-admin-notes').val(),
+                deduct_fees: $('#deduct-fees-checkbox').is(':checked') ? 1 : 0
             },
             success: function(response) {
                 $('#payFreelancerModal').modal('hide');

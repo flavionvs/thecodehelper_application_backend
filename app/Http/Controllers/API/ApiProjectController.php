@@ -225,6 +225,14 @@ class ApiProjectController extends Controller
             // Include selected_application_id for cancel action
             $array['selected_application_id'] = $item->selected_application_id ?? null;
 
+            // Include financial data for cancellation fee display
+            if ($application) {
+                $array['total_amount'] = $application->total_amount ?? null;
+                $array['freelancer_amount'] = $application->amount ?? null;
+                $array['stripe_amount'] = $application->stripe_amount ?? null;
+                $array['stripe_fee'] = $application->stripe_fee ?? null;
+            }
+
             if (!$businessId && !$routeId) {
                 $array['category'] = $item->category->name ?? null;
                 $array['created_at'] = dateFormat($item->created_at);
@@ -1113,28 +1121,40 @@ class ApiProjectController extends Controller
                 'reference_id' => $project->id,
             ]);
 
-            // ✅ Send project completed emails to both parties
-            try {
-                $freelancer = User::find($application->user_id);
-                $client = User::find($project->user_id);
-                if ($freelancer) {
+            // ✅ Send project completed emails to both parties (separate try-catch for each)
+            $freelancer = User::find($application->user_id);
+            $client = User::find($project->user_id);
+
+            if ($freelancer) {
+                try {
                     EmailService::sendProjectCompleted(
                         $freelancer, 
                         $project, 
                         $application->amount,
                         "Congratulations! Your work on \"{$project->title}\" has been accepted. Payment of \${$application->amount} has been transferred to your account."
                     );
+                    \Log::info('Project completed email sent to freelancer', ['user_id' => $freelancer->id, 'email' => $freelancer->email]);
+                } catch (\Throwable $e) {
+                    \Log::error('Project completed email FAILED for freelancer', ['user_id' => $freelancer->id, 'email' => $freelancer->email, 'error' => $e->getMessage()]);
                 }
-                if ($client) {
+            } else {
+                \Log::warning('Project completed: freelancer user not found', ['user_id' => $application->user_id]);
+            }
+
+            if ($client) {
+                try {
                     EmailService::sendProjectCompleted(
                         $client, 
                         $project, 
                         $application->amount,
                         "The project \"{$project->title}\" has been marked as completed. Thank you for using The Code Helper!"
                     );
+                    \Log::info('Project completed email sent to client', ['user_id' => $client->id, 'email' => $client->email]);
+                } catch (\Throwable $e) {
+                    \Log::error('Project completed email FAILED for client', ['user_id' => $client->id, 'email' => $client->email, 'error' => $e->getMessage()]);
                 }
-            } catch (\Throwable $e) {
-                \Log::error('Project completed email failed: ' . $e->getMessage());
+            } else {
+                \Log::warning('Project completed: client user not found', ['user_id' => $project->user_id]);
             }
 
             DB::commit();
@@ -1175,11 +1195,19 @@ class ApiProjectController extends Controller
 
             $appPk = $this->applicationPk($application);
 
-            // Store the cancel reason on the application
+            // Store the cancel reason and cancellation charges on the application
+            $totalAmount = $application->total_amount ?? 0;
+            $cancellationFee = round($totalAmount * 0.10, 2);
+            $stripeProcessingFee = round(($application->stripe_amount ?? 0) + ($application->stripe_fee ?? 0), 2);
+            $refundAmount = round($totalAmount - $cancellationFee - $stripeProcessingFee, 2);
+
             DB::table('applications')
                 ->where('id', $appPk)
                 ->update([
                     'cancel_reason' => request()->cancel_reason,
+                    'cancellation_fee' => $cancellationFee,
+                    'stripe_processing_fee' => $stripeProcessingFee,
+                    'refund_amount' => $refundAmount,
                     'updated_at' => now(),
                 ]);
 
@@ -1226,7 +1254,10 @@ class ApiProjectController extends Controller
                     'freelancer_name' => $freelancer->first_name ?? 'Freelancer',
                     'freelancer_email' => $freelancer->email ?? '',
                     'cancel_reason' => request()->cancel_reason ?? 'No reason provided',
-                    'amount' => $application->total_amount ?? $project->budget,
+                    'amount' => $totalAmount,
+                    'cancellation_fee' => $cancellationFee,
+                    'stripe_processing_fee' => $stripeProcessingFee,
+                    'refund_amount' => $refundAmount,
                     'admin_url' => url(guardName() . '/cancellation-requests'),
                 ], function ($message) use ($adminEmail) {
                     $message->to($adminEmail)

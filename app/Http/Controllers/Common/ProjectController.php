@@ -131,7 +131,10 @@ class ProjectController extends Controller
                     'applications.cancel_reason',
                     'applications.amount',
                     'applications.total_amount',
-                    'applications.id as application_id'
+                    'applications.id as application_id',
+                    'applications.cancellation_fee',
+                    'applications.stripe_processing_fee',
+                    'applications.refund_amount'
                 )
                 ->orderByDesc('projects.updated_at');
 
@@ -164,10 +167,18 @@ class ProjectController extends Controller
                 })
                 ->addColumn('action', function ($row) {
                     if ($row->project_status === 'cancellation_requested') {
+                        $totalAmount = $row->total_amount ?? $row->amount ?? $row->budget;
+                        $cancellationFee = $row->cancellation_fee ?? round($totalAmount * 0.10, 2);
+                        $stripeProcessingFee = $row->stripe_processing_fee ?? 0;
+                        $refundAmount = $row->refund_amount ?? round($totalAmount - $cancellationFee - $stripeProcessingFee, 2);
+
                         return '<button class="btn btn-sm btn-success refund-client-btn mb-1" 
                                     data-project-id="' . $row->id . '" 
                                     data-project-name="' . htmlspecialchars($row->title) . '"
-                                    data-amount="' . number_format($row->amount ?? $row->budget, 2) . '"
+                                    data-total-amount="' . number_format($totalAmount, 2, '.', '') . '"
+                                    data-cancellation-fee="' . number_format($cancellationFee, 2, '.', '') . '"
+                                    data-stripe-fee="' . number_format($stripeProcessingFee, 2, '.', '') . '"
+                                    data-refund-amount="' . number_format($refundAmount, 2, '.', '') . '"
                                     data-client-name="' . htmlspecialchars($row->client_name) . '"
                                     data-client-email="' . htmlspecialchars($row->client_email) . '">
                                     Refund Client
@@ -175,7 +186,10 @@ class ProjectController extends Controller
                                 <button class="btn btn-sm btn-primary pay-freelancer-btn mb-1" 
                                     data-project-id="' . $row->id . '" 
                                     data-project-name="' . htmlspecialchars($row->title) . '"
-                                    data-amount="' . number_format($row->amount ?? $row->budget, 2) . '"
+                                    data-amount="' . number_format($row->amount ?? $row->budget, 2, '.', '') . '"
+                                    data-total-amount="' . number_format($totalAmount, 2, '.', '') . '"
+                                    data-cancellation-fee="' . number_format($cancellationFee, 2, '.', '') . '"
+                                    data-stripe-fee="' . number_format($stripeProcessingFee, 2, '.', '') . '"
                                     data-freelancer-name="' . htmlspecialchars($row->freelancer_name) . '"
                                     data-freelancer-email="' . htmlspecialchars($row->freelancer_email) . '">
                                     Pay Freelancer
@@ -225,7 +239,7 @@ class ProjectController extends Controller
             $action = $request->input('action'); // 'approve_refund', 'approve_transfer', or 'reject'
 
             if ($action === 'approve_refund') {
-                // ✅ OPTION 1: Refund the client via Stripe Refund API
+                // ✅ OPTION 1: Partial refund to client via Stripe (after deducting cancellation + Stripe fees)
                 $originalPayment = Payment::where('application_id', $application->id)
                     ->where('paymentStatus', 'succeeded')
                     ->whereNotNull('paymentIntentId')
@@ -236,17 +250,35 @@ class ProjectController extends Controller
                     return response()->json(['status' => false, 'message' => 'Original payment record not found. Cannot process refund.']);
                 }
 
+                // Calculate refund amount after deducting fees
+                $totalAmount = $application->total_amount ?? 0;
+                $cancellationFee = $application->cancellation_fee ?? round($totalAmount * 0.10, 2);
+                $stripeProcessingFee = $application->stripe_processing_fee ?? 0;
+                $refundAmount = $application->refund_amount ?? round($totalAmount - $cancellationFee - $stripeProcessingFee, 2);
+
+                if ($refundAmount <= 0) {
+                    DB::rollBack();
+                    return response()->json(['status' => false, 'message' => 'Refund amount after fee deductions is zero or negative.']);
+                }
+
+                $refundAmountCents = (int) round($refundAmount * 100);
+
                 try {
                     \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
 
                     $refund = \Stripe\Refund::create([
                         'payment_intent' => $originalPayment->paymentIntentId,
+                        'amount' => $refundAmountCents,
                     ]);
 
-                    \Log::info('[processCancellation] Stripe refund to client created', [
+                    \Log::info('[processCancellation] Stripe partial refund to client created', [
                         'refund_id' => $refund->id,
                         'payment_intent' => $originalPayment->paymentIntentId,
-                        'amount' => $refund->amount,
+                        'total_amount' => $totalAmount,
+                        'cancellation_fee' => $cancellationFee,
+                        'stripe_processing_fee' => $stripeProcessingFee,
+                        'refund_amount' => $refundAmount,
+                        'refund_amount_cents' => $refundAmountCents,
                         'currency' => $refund->currency,
                         'status' => $refund->status,
                     ]);
@@ -263,7 +295,7 @@ class ProjectController extends Controller
                 Payment::create([
                     'application_id' => $application->id,
                     'user_id' => $project->user_id,
-                    'amount' => -1 * $originalPayment->amount,
+                    'amount' => -1 * $refundAmount,
                     'paymentStatus' => 'refunded',
                     'paymentIntentId' => $originalPayment->paymentIntentId,
                 ]);
@@ -293,7 +325,7 @@ class ProjectController extends Controller
                 Notification::create([
                     'user_id' => $project->user_id,
                     'title' => 'Cancellation Approved ✅',
-                    'message' => "Your cancellation request for \"{$project->title}\" has been approved and the refund has been processed to your original payment method.",
+                    'message' => "Your cancellation request for \"{$project->title}\" has been approved. A refund of \${$refundAmount} has been processed to your original payment method (after deducting cancellation and processing fees).",
                     'type' => 'cancelled',
                     'link' => '/user/project?type=cancelled',
                     'reference_id' => $project->id,
@@ -314,6 +346,29 @@ class ProjectController extends Controller
                 if (!$application->amount || $application->amount <= 0) {
                     DB::rollBack();
                     return response()->json(['status' => false, 'message' => 'No transferable amount found on the application.']);
+                }
+
+                // Determine transfer amount based on admin's fee deduction choice
+                $deductFees = $request->input('deduct_fees', 0);
+                $transferAmount = $application->amount;
+
+                if ($deductFees) {
+                    $totalAmount = $application->total_amount ?? 0;
+                    $cancellationFee = $application->cancellation_fee ?? round($totalAmount * 0.10, 2);
+                    $stripeProcessingFee = $application->stripe_processing_fee ?? 0;
+                    $transferAmount = round($application->amount - $cancellationFee - $stripeProcessingFee, 2);
+
+                    if ($transferAmount <= 0) {
+                        DB::rollBack();
+                        return response()->json(['status' => false, 'message' => 'Transfer amount after fee deductions is zero or negative.']);
+                    }
+
+                    \Log::info('[processCancellation] Deducting fees from freelancer transfer', [
+                        'original_amount' => $application->amount,
+                        'cancellation_fee' => $cancellationFee,
+                        'stripe_processing_fee' => $stripeProcessingFee,
+                        'net_transfer_amount' => $transferAmount,
+                    ]);
                 }
 
                 // Find original charge to link the transfer (avoids "insufficient balance")
@@ -342,7 +397,7 @@ class ProjectController extends Controller
                     ]);
                 }
 
-                $transfer = transfer($freelancer->stripe_account_id, $application->amount, $sourceTransaction);
+                $transfer = transfer($freelancer->stripe_account_id, $transferAmount, $sourceTransaction);
                 if (!$transfer['status']) {
                     DB::rollBack();
                     return response()->json(['status' => false, 'message' => 'Stripe transfer failed: ' . ($transfer['message'] ?? 'Unknown error')]);
@@ -352,7 +407,7 @@ class ProjectController extends Controller
                 Payment::create([
                     'application_id' => $application->id,
                     'user_id' => $application->user_id,
-                    'amount' => $application->amount,
+                    'amount' => $transferAmount,
                     'paymentStatus' => 'succeeded',
                     'stripe_transfer_id' => $transfer['stripe_transfer_id'],
                 ]);
@@ -369,10 +424,11 @@ class ProjectController extends Controller
                 ]);
 
                 // Notify freelancer
+                $feeNote = $deductFees ? " (after deducting cancellation and processing fees)" : "";
                 Notification::create([
                     'user_id' => $application->user_id,
                     'title' => 'Payment Received ✅',
-                    'message' => "The project \"{$project->title}\" has been cancelled, but your payment has been transferred for the work completed.",
+                    'message' => "The project \"{$project->title}\" has been cancelled, but your payment of \${$transferAmount} has been transferred for the work completed{$feeNote}.",
                     'type' => 'approved',
                     'link' => '/user/project?type=cancelled',
                     'reference_id' => $project->id,
