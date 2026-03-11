@@ -14,6 +14,7 @@ use App\Models\Project;
 use App\Models\Group;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Yajra\DataTables\Facades\DataTables;
 
 class ProjectController extends Controller
@@ -107,18 +108,7 @@ class ProjectController extends Controller
     public function cancellationRequests(Request $request)
     {
         if ($request->ajax()) {
-            $data = DB::table('projects')
-                ->join('users as clients', 'clients.id', '=', 'projects.user_id')
-                ->join('applications', function ($join) {
-                    $join->on('applications.project_id', '=', 'projects.id')
-                        ->where(function ($q) {
-                            $q->where('applications.status', 'Approved')
-                              ->orWhere('applications.status', 'Completion Requested');
-                        });
-                })
-                ->join('users as freelancers', 'freelancers.id', '=', 'applications.user_id')
-                ->whereIn('projects.status', ['cancellation_requested', 'cancelled'])
-                ->select(
+            $selectColumns = [
                     'projects.id',
                     'projects.title',
                     'projects.status as project_status',
@@ -132,10 +122,27 @@ class ProjectController extends Controller
                     'applications.amount',
                     'applications.total_amount',
                     'applications.id as application_id',
-                    'applications.cancellation_fee',
-                    'applications.stripe_processing_fee',
-                    'applications.refund_amount'
-                )
+                ];
+
+                // Add fee columns only if they exist (migration may not have run yet)
+                if (Schema::hasColumn('applications', 'cancellation_fee')) {
+                    $selectColumns[] = 'applications.cancellation_fee';
+                    $selectColumns[] = 'applications.stripe_processing_fee';
+                    $selectColumns[] = 'applications.refund_amount';
+                }
+
+            $data = DB::table('projects')
+                ->join('users as clients', 'clients.id', '=', 'projects.user_id')
+                ->join('applications', function ($join) {
+                    $join->on('applications.project_id', '=', 'projects.id')
+                        ->where(function ($q) {
+                            $q->where('applications.status', 'Approved')
+                              ->orWhere('applications.status', 'Completion Requested');
+                        });
+                })
+                ->join('users as freelancers', 'freelancers.id', '=', 'applications.user_id')
+                ->whereIn('projects.status', ['cancellation_requested', 'cancelled'])
+                ->select($selectColumns)
                 ->orderByDesc('projects.updated_at');
 
             return DataTables::of($data)
