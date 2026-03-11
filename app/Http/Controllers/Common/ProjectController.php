@@ -15,6 +15,7 @@ use App\Models\Group;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\EmailService;
 use Yajra\DataTables\Facades\DataTables;
 
 class ProjectController extends Controller
@@ -261,7 +262,11 @@ class ProjectController extends Controller
                 $totalAmount = $application->total_amount ?? 0;
                 $cancellationFee = $application->cancellation_fee ?? round($totalAmount * 0.10, 2);
                 $stripeProcessingFee = $application->stripe_processing_fee ?? 0;
-                $refundAmount = $application->refund_amount ?? round($totalAmount - $cancellationFee - $stripeProcessingFee, 2);
+                $defaultRefund = $application->refund_amount ?? round($totalAmount - $cancellationFee - $stripeProcessingFee, 2);
+
+                // Use admin's custom refund amount if provided, otherwise use calculated amount
+                $customRefund = $request->input('custom_refund_amount');
+                $refundAmount = $customRefund !== null ? round((float) $customRefund, 2) : $defaultRefund;
 
                 if ($refundAmount <= 0) {
                     DB::rollBack();
@@ -339,6 +344,23 @@ class ProjectController extends Controller
                 ]);
 
                 DB::commit();
+
+                // Send emails after commit
+                $client = User::find($project->user_id);
+                $freelancerUser = User::find($application->user_id);
+                if ($client) {
+                    EmailService::sendCancellationApproved(
+                        $client, $project, 'refund', $refundAmount,
+                        "Your cancellation request for \"{$project->title}\" has been approved. A refund of \${$refundAmount} has been processed to your original payment method (after deducting cancellation and processing fees)."
+                    );
+                }
+                if ($freelancerUser) {
+                    EmailService::sendCancellationApproved(
+                        $freelancerUser, $project, 'refund', $refundAmount,
+                        "The project \"{$project->title}\" has been cancelled. The client has been refunded."
+                    );
+                }
+
                 return response()->json(['status' => true, 'message' => 'Project cancelled and refund to client processed successfully.']);
 
             } elseif ($action === 'approve_transfer') {
@@ -357,9 +379,23 @@ class ProjectController extends Controller
 
                 // Determine transfer amount based on admin's fee deduction choice
                 $deductFees = $request->input('deduct_fees', 0);
+                $customTransfer = $request->input('custom_transfer_amount');
                 $transferAmount = $application->amount;
 
-                if ($deductFees) {
+                if ($customTransfer !== null) {
+                    // Admin specified a custom transfer amount
+                    $transferAmount = round((float) $customTransfer, 2);
+
+                    if ($transferAmount <= 0) {
+                        DB::rollBack();
+                        return response()->json(['status' => false, 'message' => 'Transfer amount must be greater than zero.']);
+                    }
+
+                    \Log::info('[processCancellation] Admin custom transfer amount', [
+                        'original_amount' => $application->amount,
+                        'custom_transfer_amount' => $transferAmount,
+                    ]);
+                } elseif ($deductFees) {
                     $totalAmount = $application->total_amount ?? 0;
                     $cancellationFee = $application->cancellation_fee ?? round($totalAmount * 0.10, 2);
                     $stripeProcessingFee = $application->stripe_processing_fee ?? 0;
@@ -452,6 +488,22 @@ class ProjectController extends Controller
                 ]);
 
                 DB::commit();
+
+                // Send emails after commit
+                $client = User::find($project->user_id);
+                if ($freelancer) {
+                    EmailService::sendCancellationApproved(
+                        $freelancer, $project, 'transfer', $transferAmount,
+                        "The project \"{$project->title}\" has been cancelled, but your payment of \${$transferAmount} has been transferred for the work completed{$feeNote}."
+                    );
+                }
+                if ($client) {
+                    EmailService::sendCancellationApproved(
+                        $client, $project, 'transfer', $transferAmount,
+                        "Your cancellation request for \"{$project->title}\" has been approved. The payment has been transferred to the freelancer for work completed."
+                    );
+                }
+
                 return response()->json(['status' => true, 'message' => 'Project cancelled and payment transferred to freelancer successfully.']);
 
             } elseif ($action === 'reject') {

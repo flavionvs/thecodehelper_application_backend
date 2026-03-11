@@ -260,4 +260,41 @@ class EmailService
             return false;
         }
     }
+
+    /**
+     * Send cancellation approved email
+     * @param string $type 'refund' or 'transfer'
+     */
+    public static function sendCancellationApproved($user, $project, $type, $amount, $customMessage)
+    {
+        try {
+            $subject = $type === 'refund'
+                ? '💰 Cancellation Approved – Refund Processed - The Code Helper'
+                : '✅ Cancellation Approved – Payment Transferred - The Code Helper';
+
+            Mail::send('emails.cancellation-approved', [
+                'user_name' => $user->first_name,
+                'project_title' => $project->title,
+                'project_id' => $project->id,
+                'type' => $type,
+                'amount' => $amount,
+                'email_message' => $customMessage,
+            ], function ($message) use ($user, $subject) {
+                $message->to($user->email)->subject($subject);
+            });
+
+            Log::info('Cancellation approved email sent', [
+                'user_id' => $user->id,
+                'project_id' => $project->id,
+                'type' => $type,
+            ]);
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Failed to send cancellation approved email', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id ?? null,
+            ]);
+            return false;
+        }
+    }
 }

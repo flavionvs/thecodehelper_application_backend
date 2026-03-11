@@ -60,8 +60,10 @@
                         <td class="text-right">- $<span id="refund-stripe-fee"></span></td>
                     </tr>
                     <tr class="font-weight-bold bg-light">
-                        <td>Net Refund to Client</td>
-                        <td class="text-right text-success">$<span id="refund-net-amount"></span></td>
+                        <td>Net Refund to Client <small class="text-muted">(editable)</small></td>
+                        <td class="text-right text-success">
+                            $<input type="number" id="refund-net-amount" step="0.01" min="0" style="width: 100px; text-align: right; font-weight: 700; border: 1px solid #28a745; border-radius: 4px; padding: 2px 6px;">
+                        </td>
                     </tr>
                 </table>
                 <div class="form-group">
@@ -111,12 +113,17 @@
                         <td class="text-right">- $<span id="transfer-stripe-fee"></span></td>
                     </tr>
                     <tr class="font-weight-bold bg-light">
-                        <td>Net Transfer to Freelancer</td>
-                        <td class="text-right text-primary">$<span id="transfer-net-amount"></span></td>
+                        <td>Net Transfer to Freelancer <small class="text-muted">(editable)</small></td>
+                        <td class="text-right text-primary">
+                            $<input type="number" id="transfer-net-amount" step="0.01" min="0" style="width: 100px; text-align: right; font-weight: 700; border: 1px solid #007bff; border-radius: 4px; padding: 2px 6px;">
+                        </td>
                     </tr>
                 </table>
 
-                <p id="transfer-no-deduction-text"><strong>Amount to transfer:</strong> $<span id="transfer-amount"></span></p>
+                <div id="transfer-no-deduction-text">
+                    <p><strong>Amount to transfer</strong> <small class="text-muted">(editable)</small><strong>:</strong></p>
+                    <p>$<input type="number" id="transfer-amount" step="0.01" min="0" style="width: 120px; text-align: right; font-weight: 700; border: 1px solid #007bff; border-radius: 4px; padding: 2px 6px;"></p>
+                </div>
 
                 <div class="form-group">
                     <label>Admin Notes (optional)</label>
@@ -188,7 +195,7 @@
         $('#refund-total-amount').text(parseFloat($(this).data('total-amount')).toFixed(2));
         $('#refund-cancellation-fee').text(parseFloat($(this).data('cancellation-fee')).toFixed(2));
         $('#refund-stripe-fee').text(parseFloat($(this).data('stripe-fee')).toFixed(2));
-        $('#refund-net-amount').text(parseFloat($(this).data('refund-amount')).toFixed(2));
+        $('#refund-net-amount').val(parseFloat($(this).data('refund-amount')).toFixed(2));
         $('#refund-client-name').text($(this).data('client-name'));
         $('#refund-client-email').text($(this).data('client-email'));
         $('#refund-admin-notes').val('');
@@ -198,6 +205,11 @@
     // Confirm Refund Client
     $('#confirm-refund-client-btn').on('click', function() {
         var btn = $(this);
+        var customAmount = parseFloat($('#refund-net-amount').val());
+        if (isNaN(customAmount) || customAmount <= 0) {
+            alert('Please enter a valid refund amount.');
+            return;
+        }
         btn.prop('disabled', true).text('Processing...');
         
         $.ajax({
@@ -206,7 +218,8 @@
             data: {
                 _token: '{{ csrf_token() }}',
                 action: 'approve_refund',
-                admin_notes: $('#refund-admin-notes').val()
+                admin_notes: $('#refund-admin-notes').val(),
+                custom_refund_amount: customAmount
             },
             success: function(response) {
                 $('#refundClientModal').modal('hide');
@@ -235,11 +248,11 @@
         var netAmount = Math.max(0, amount - cancellationFee - stripeFee);
 
         $('#transfer-project-name').text($(this).data('project-name'));
-        $('#transfer-amount').text(amount.toFixed(2));
+        $('#transfer-amount').val(amount.toFixed(2));
         $('#transfer-full-amount').text(amount.toFixed(2));
         $('#transfer-cancellation-fee').text(cancellationFee.toFixed(2));
         $('#transfer-stripe-fee').text(stripeFee.toFixed(2));
-        $('#transfer-net-amount').text(netAmount.toFixed(2));
+        $('#transfer-net-amount').val(netAmount.toFixed(2));
         $('#transfer-freelancer-name').text($(this).data('freelancer-name'));
         $('#transfer-freelancer-email').text($(this).data('freelancer-email'));
         $('#transfer-admin-notes').val('');
@@ -263,6 +276,12 @@
     // Confirm Pay Freelancer
     $('#confirm-pay-freelancer-btn').on('click', function() {
         var btn = $(this);
+        var deductFees = $('#deduct-fees-checkbox').is(':checked');
+        var customAmount = deductFees ? parseFloat($('#transfer-net-amount').val()) : parseFloat($('#transfer-amount').val());
+        if (isNaN(customAmount) || customAmount <= 0) {
+            alert('Please enter a valid transfer amount.');
+            return;
+        }
         btn.prop('disabled', true).text('Processing...');
         
         $.ajax({
@@ -272,7 +291,8 @@
                 _token: '{{ csrf_token() }}',
                 action: 'approve_transfer',
                 admin_notes: $('#transfer-admin-notes').val(),
-                deduct_fees: $('#deduct-fees-checkbox').is(':checked') ? 1 : 0
+                deduct_fees: deductFees ? 1 : 0,
+                custom_transfer_amount: customAmount
             },
             success: function(response) {
                 $('#payFreelancerModal').modal('hide');
