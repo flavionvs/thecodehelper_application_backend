@@ -116,3 +116,115 @@ Route::group(['middleware' => ['api']], function($router) {
     Route::post('/verify-otp', 'API\ApiUserController@verifyOtp');
     Route::post('/change-password', 'API\ApiUserController@changePassword');
 });
+
+// ── Temporary test-email route (remove after testing) ──
+Route::get('test-email/{template}', function ($template) {
+    $secret = request()->query('key');
+    if ($secret !== 'tch_email_test_2026') {
+        return response()->json(['error' => 'Unauthorized'], 403);
+    }
+    $to = request()->query('to', 'ranjans838@gmail.com');
+
+    $templates = [
+        'verify-email' => [
+            'subject' => '✉️ Verify Your Email - The Code Helper',
+            'data' => [
+                'user' => (object) ['first_name' => 'Ranjan', 'email' => 'ranjans838@gmail.com', 'otp' => '482916'],
+            ],
+        ],
+        'welcome' => [
+            'subject' => '👋 Welcome to The Code Helper!',
+            'data' => [
+                'user' => (object) ['first_name' => 'Ranjan', 'email' => 'ranjans838@gmail.com'],
+            ],
+        ],
+        'project-created' => [
+            'subject' => '🚀 Project Created Successfully - The Code Helper',
+            'data' => [
+                'client_name' => 'Ranjan', 'client_email' => 'ranjans838@gmail.com',
+                'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'project_description' => 'A full redesign of the existing e-commerce platform with modern UI/UX, responsive design, and improved checkout flow.',
+                'project_budget' => '2500.00', 'project_slug' => 'e-commerce-website-redesign',
+            ],
+        ],
+        'application-approved' => [
+            'subject' => '🚀 Payment Received – Start Working on Your Project - The Code Helper',
+            'data' => [
+                'freelancer_name' => 'Ranjan', 'freelancer_email' => 'ranjans838@gmail.com',
+                'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'project_description' => 'A full redesign of the existing e-commerce platform with modern UI/UX.',
+                'client_name' => 'John Smith', 'client_email' => 'john@example.com', 'budget' => '2500.00',
+            ],
+        ],
+        'payment-successful' => [
+            'subject' => '✅ Payment Confirmed - The Code Helper',
+            'data' => [
+                'client_name' => 'Ranjan', 'client_email' => 'ranjans838@gmail.com',
+                'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'project_description' => 'A full redesign of the existing e-commerce platform.',
+                'freelancer_name' => 'Jane Doe', 'freelancer_email' => 'jane@example.com', 'amount' => '2500.00',
+            ],
+        ],
+        'new-application' => [
+            'subject' => '📬 New Application Received - The Code Helper',
+            'data' => [
+                'client_name' => 'Ranjan', 'client_email' => 'ranjans838@gmail.com',
+                'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'project_description' => 'A full redesign of the existing e-commerce platform.',
+                'freelancer_name' => 'Jane Doe', 'freelancer_email' => 'jane@example.com', 'amount' => '2000.00',
+            ],
+        ],
+        'completion-requested' => [
+            'subject' => '📋 Project Completion Requested - The Code Helper',
+            'data' => [
+                'client_name' => 'Ranjan', 'client_email' => 'ranjans838@gmail.com',
+                'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'freelancer_name' => 'Jane Doe', 'freelancer_email' => 'jane@example.com',
+            ],
+        ],
+        'project-completed' => [
+            'subject' => '🏆 Project Completed - The Code Helper',
+            'data' => [
+                'user_name' => 'Ranjan', 'user_email' => 'ranjans838@gmail.com',
+                'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'amount' => '2500.00',
+                'message' => 'The project has been marked as completed. Great work! Thank you for using The Code Helper.',
+            ],
+        ],
+        'cancellation-approved-refund' => [
+            'subject' => '💰 Cancellation Approved – Refund Processed - The Code Helper',
+            'view' => 'cancellation-approved',
+            'data' => [
+                'user_name' => 'Ranjan', 'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'type' => 'refund', 'amount' => 2025.00,
+                'email_message' => 'Your cancellation request for "E-Commerce Website Redesign" has been approved. A refund of $2,025.00 has been processed to your original payment method (after deducting cancellation and processing fees).',
+            ],
+        ],
+        'cancellation-approved-transfer' => [
+            'subject' => '✅ Cancellation Approved – Payment Transferred - The Code Helper',
+            'view' => 'cancellation-approved',
+            'data' => [
+                'user_name' => 'Ranjan', 'project_title' => 'E-Commerce Website Redesign', 'project_id' => 101,
+                'type' => 'transfer', 'amount' => 1875.00,
+                'email_message' => 'The project "E-Commerce Website Redesign" has been cancelled, but your payment of $1,875.00 has been transferred for the work completed.',
+            ],
+        ],
+    ];
+
+    if (!isset($templates[$template])) {
+        return response()->json(['error' => 'Unknown template', 'available' => array_keys($templates)], 400);
+    }
+
+    $cfg = $templates[$template];
+    $view = 'emails.' . ($cfg['view'] ?? $template);
+    $subject = '[TEST] ' . $cfg['subject'];
+
+    try {
+        Mail::send($view, $cfg['data'], function ($message) use ($to, $subject) {
+            $message->to($to)->subject($subject);
+        });
+        return response()->json(['status' => true, 'message' => "Email '{$template}' sent to {$to}"]);
+    } catch (\Exception $e) {
+        return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+    }
+});
