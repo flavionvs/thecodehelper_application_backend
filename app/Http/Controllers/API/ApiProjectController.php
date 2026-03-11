@@ -226,11 +226,32 @@ class ApiProjectController extends Controller
             $array['selected_application_id'] = $item->selected_application_id ?? null;
 
             // Include financial data for cancellation fee display
-            if ($application) {
-                $array['total_amount'] = $application->total_amount ?? null;
-                $array['freelancer_amount'] = $application->amount ?? null;
-                $array['stripe_amount'] = $application->stripe_amount ?? null;
-                $array['stripe_fee'] = $application->stripe_fee ?? null;
+            // Use selected_application for correct data when multiple applications exist
+            $finApp = $application;
+            if ($item->selected_application_id) {
+                $selectedApp = DB::table('applications')->where('id', (int) $item->selected_application_id)->first();
+                if ($selectedApp) {
+                    $finApp = $selectedApp;
+                }
+            }
+            if ($finApp) {
+                $totalAmt = (float) ($finApp->total_amount ?? 0);
+                $stripeAmt = (float) ($finApp->stripe_amount ?? 0);
+                $stripeFee = (float) ($finApp->stripe_fee ?? 0);
+                $freelancerAmt = (float) ($finApp->amount ?? 0);
+
+                // Fallback: calculate from freelancer amount if total_amount not set
+                if ($totalAmt <= 0 && $freelancerAmt > 0) {
+                    $adminAmt = round($freelancerAmt * 0.25, 2);
+                    $stripeAmt = round($freelancerAmt * 0.026, 2);
+                    $stripeFee = 0.30;
+                    $totalAmt = round($freelancerAmt + $adminAmt + $stripeAmt + $stripeFee, 2);
+                }
+
+                $array['total_amount'] = $totalAmt > 0 ? $totalAmt : null;
+                $array['freelancer_amount'] = $freelancerAmt > 0 ? $freelancerAmt : null;
+                $array['stripe_amount'] = $stripeAmt > 0 ? $stripeAmt : null;
+                $array['stripe_fee'] = $stripeFee > 0 ? $stripeFee : null;
             }
 
             if (!$businessId && !$routeId) {

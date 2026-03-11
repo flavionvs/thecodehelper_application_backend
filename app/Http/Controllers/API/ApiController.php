@@ -912,21 +912,14 @@ class ApiController extends Controller
                         $freelancer = User::find($application->user_id);
                         $client = User::find($project->user_id);
                         if ($freelancer && $client) {
-                            EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
-                            EmailService::sendPaymentSuccessful($client, $project, $freelancer, $application->amount ?? $project->budget);
-                            \Log::info('[VerifyCheckout] Emails sent successfully', [
+                            \Log::info('[VerifyCheckout] Will send emails after transaction', [
                                 'freelancer' => $freelancer->email,
                                 'client' => $client->email,
                                 'project_id' => $project->id,
                             ]);
-                        } else {
-                            \Log::warning('[VerifyCheckout] Could not find users for email', [
-                                'freelancer_id' => $application->user_id,
-                                'client_id' => $project->user_id,
-                            ]);
                         }
                     } catch (\Throwable $e) {
-                        \Log::error('[VerifyCheckout] Email failed', ['error' => $e->getMessage()]);
+                        \Log::error('[VerifyCheckout] User lookup failed', ['error' => $e->getMessage()]);
                     }
                 }
 
@@ -934,6 +927,9 @@ class ApiController extends Controller
                     'updated' => true,
                     'project_id' => $project->id,
                     'project_status' => $project->status,
+                    'send_emails' => !$notifAlreadySent,
+                    'freelancer_user_id' => $application->user_id,
+                    'client_user_id' => $project->user_id,
                 ];
             });
 
@@ -941,6 +937,32 @@ class ApiController extends Controller
                 'session_id' => $sessionId,
                 'result' => $result,
             ]);
+
+            // ✅ Send emails AFTER transaction commits (keeps SMTP out of DB transaction)
+            if ($result['send_emails'] ?? false) {
+                try {
+                    $project = Project::find($result['project_id']);
+                    $freelancer = User::find($result['freelancer_user_id']);
+                    $client = $project ? User::find($result['client_user_id']) : null;
+                    if ($freelancer && $client && $project) {
+                        $totalPaid = (float)($application->total_amount ?: $amount);
+                        EmailService::sendApplicationApproved($freelancer, $project, $client, $application->amount ?? $project->budget);
+                        EmailService::sendPaymentSuccessful($client, $project, $freelancer, $totalPaid);
+                        \Log::info('[VerifyCheckout] Emails sent successfully', [
+                            'freelancer' => $freelancer->email,
+                            'client' => $client->email,
+                            'total_paid' => $totalPaid,
+                        ]);
+                    } else {
+                        \Log::warning('[VerifyCheckout] Could not find users for email', [
+                            'freelancer_id' => $result['freelancer_user_id'] ?? null,
+                            'client_id' => $result['client_user_id'] ?? null,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    \Log::error('[VerifyCheckout] Email failed', ['error' => $e->getMessage()]);
+                }
+            }
 
             return response()->json([
                 'status' => true,
