@@ -158,6 +158,9 @@ class User extends Authenticatable implements JWTSubject
         $data = User::where('role', $role)->select('users.*');        
         return DataTables::of($data)
             ->addIndexColumn()         
+            ->addColumn('checkbox', function($data){
+                return '<input type="checkbox" class="bulk-check" value="'.$data->id.'">';
+            })
             ->editColumn('role_id', '{{$role}}')                                   
             ->addColumn('action', function($data){
                 $action = [];                      
@@ -169,7 +172,7 @@ class User extends Authenticatable implements JWTSubject
                 }                    
                 return view('admin.layout.action', compact('action'));
             })                
-            ->rawColumns(['action'])
+            ->rawColumns(['action', 'checkbox'])
             ->make(true);
             
     }

@@ -53,10 +53,12 @@ Route::group(['middleware' => ['HttpsProtocol']], function () {
         Route::post('update-website-setting', 'WebsiteSettingController@updateWebsiteSetting');
 
         Route::resource('user', 'UserController');
+        Route::post('user-bulk-delete', 'UserController@bulkDestroy');
         Route::get('freelancer', 'UserController@freelancer');
         Route::get('client', 'UserController@client');
 
         Route::resource('project', 'ProjectController');
+        Route::post('project-bulk-delete', 'ProjectController@bulkDestroy');
         Route::get('application/{project_id?}', 'ProjectController@application');
         Route::get('cancellation-requests', 'ProjectController@cancellationRequests');
         Route::post('process-cancellation/{project_id}', 'ProjectController@processCancellation');

@@ -90,6 +90,27 @@ class UserController extends Controller
         }
         return response()->json(['status'=>true,'message'=> 'Record deleted successfully!']);
     }
+
+    public function bulkDestroy(Request $request){
+        $ids = $request->input('ids', []);
+        if(empty($ids)){
+            return response()->json(['status'=>false,'message'=> 'No records selected']);
+        }
+        // Never allow deleting Admin users via bulk delete
+        $ids = User::whereIn('id', $ids)->where('role', '!=', 'Admin')->pluck('id')->toArray();
+        if(empty($ids)){
+            return response()->json(['status'=>false,'message'=> 'No deletable records found (Admin users cannot be bulk deleted)']);
+        }
+        DB::BeginTransaction();
+        try{
+            User::whereIn('id', $ids)->delete();
+            DB::commit();
+        }catch(\Exception $e){
+            DB::rollBack();
+            return response()->json(['status'=>false,'message'=> $e->getMessage()]);
+        }
+        return response()->json(['status'=>true,'message'=> count($ids).' record(s) deleted successfully!']);
+    }
     public function editProfile(){
         return view('superadmin.setting.update-profile');
     }

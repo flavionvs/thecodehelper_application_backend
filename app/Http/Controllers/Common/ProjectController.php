@@ -103,6 +103,22 @@ class ProjectController extends Controller
         return response()->json(['status'=>true,'message'=> 'Project deleted successfully!']);
     }
 
+    public function bulkDestroy(Request $request){
+        $ids = $request->input('ids', []);
+        if(empty($ids)){
+            return response()->json(['status'=>false,'message'=> 'No records selected']);
+        }
+        DB::BeginTransaction();
+        try{
+            Project::whereIn('id', $ids)->delete();
+            DB::commit();
+        }catch(\Exception $e){
+            DB::rollBack();
+            return response()->json(['status'=>false,'message'=> showError($e)]);
+        }
+        return response()->json(['status'=>true,'message'=> count($ids).' project(s) deleted successfully!']);
+    }
+
     /**
      * Show cancellation requests page
      */

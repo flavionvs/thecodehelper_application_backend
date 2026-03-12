@@ -108,6 +108,9 @@ class Project extends Model
 
         return DataTables::of($data)
             ->addIndexColumn()
+            ->addColumn('checkbox', function($data){
+                return '<input type="checkbox" class="bulk-check" value="'.$data->id.'">';
+            })
             ->addColumn('created_at', '{{dateFormat($created_at)}}')
             ->addColumn('category_id', '{{$category}}')
             ->addColumn('client_id', '{{$client}}')
@@ -139,7 +142,7 @@ class Project extends Model
 
                 return view('admin.layout.action', compact('action'));
             })
-            ->rawColumns(['action', 'application'])
+            ->rawColumns(['action', 'application', 'checkbox'])
             ->make(true);
     }
 
