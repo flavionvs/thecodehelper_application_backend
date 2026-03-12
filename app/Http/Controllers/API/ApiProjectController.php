@@ -1020,18 +1020,27 @@ class ApiProjectController extends Controller
                 'reference_id' => $project->id,
             ]);
 
-            // ✅ Send email to client about completion request
+            // Capture email data before commit
+            $completionEmailData = [
+                'client_id' => $project->user_id,
+                'project_title' => $project->title,
+                'project_id' => $project->id,
+            ];
+
+            DB::commit();
+
+            // ✅ Send email AFTER commit
             try {
-                $client = User::find($project->user_id);
+                $client = User::find($completionEmailData['client_id']);
                 $freelancer = auth()->user();
                 if ($client && $freelancer) {
                     EmailService::sendCompletionRequested($client, $project, $freelancer);
+                    \Log::info('[completed] ✅ Completion request email SENT', ['client' => $client->email]);
                 }
             } catch (\Throwable $e) {
-                \Log::error('Completion request email failed: ' . $e->getMessage());
+                \Log::error('[completed] ❌ Completion request email FAILED: ' . $e->getMessage());
             }
 
-            DB::commit();
             return response()->json(['status' => true, 'message' => 'Project completion request sent successfully.']);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1045,6 +1054,9 @@ class ApiProjectController extends Controller
         if ($err) return $err;
 
         $candidateProjectIds = $this->projectIdCandidates($businessProjectId, $routeProjectId);
+
+        // Collect email data outside transaction scope
+        $emailData = null;
 
         DB::beginTransaction();
 
@@ -1153,24 +1165,49 @@ class ApiProjectController extends Controller
                 'reference_id' => $project->id,
             ]);
 
-            DB::commit();
+            // ✅ Capture all data needed for emails BEFORE commit (while objects are valid)
+            $emailData = [
+                'freelancer_id' => $application->user_id,
+                'client_id' => $project->user_id,
+                'project_title' => $project->title,
+                'project_id' => $project->id,
+                'amount' => $application->amount,
+            ];
 
-            // ✅ Send project completed emails AFTER commit (keeps SMTP out of transaction)
-            $freelancer = User::find($application->user_id);
-            $client = User::find($project->user_id);
+            DB::commit();
+            \Log::info('[acceptCompleted] DB committed successfully, preparing to send emails', $emailData);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('[acceptCompleted] Transaction failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json(['status' => false, 'message' => $e->getMessage()]);
+        }
+
+        // ✅ EMAILS COMPLETELY OUTSIDE try-catch AND transaction
+        // This ensures they always execute if the transaction committed successfully
+        if ($emailData) {
+            $freelancer = User::find($emailData['freelancer_id']);
+            $client = User::find($emailData['client_id']);
+
+            \Log::info('[acceptCompleted] Sending emails', [
+                'freelancer' => $freelancer ? $freelancer->email : 'NOT FOUND',
+                'client' => $client ? $client->email : 'NOT FOUND',
+            ]);
 
             if ($freelancer) {
                 try {
                     EmailService::sendProjectCompleted(
                         $freelancer, 
                         $project, 
-                        $application->amount,
-                        "Congratulations! Your work on \"{$project->title}\" has been accepted. Payment of \${$application->amount} has been transferred to your account."
+                        $emailData['amount'],
+                        "Congratulations! Your work on \"{$emailData['project_title']}\" has been accepted. Payment of \${$emailData['amount']} has been transferred to your account."
                     );
-                    \Log::info('Project completed email sent to freelancer', ['user_id' => $freelancer->id, 'email' => $freelancer->email]);
+                    \Log::info('[acceptCompleted] ✅ Freelancer email SENT', ['email' => $freelancer->email]);
                 } catch (\Throwable $e) {
-                    \Log::error('Project completed email FAILED for freelancer', ['user_id' => $freelancer->id, 'email' => $freelancer->email, 'error' => $e->getMessage()]);
+                    \Log::error('[acceptCompleted] ❌ Freelancer email FAILED', ['email' => $freelancer->email, 'error' => $e->getMessage()]);
                 }
+            } else {
+                \Log::error('[acceptCompleted] Freelancer not found for email', ['id' => $emailData['freelancer_id']]);
             }
 
             if ($client) {
@@ -1178,20 +1215,19 @@ class ApiProjectController extends Controller
                     EmailService::sendProjectCompleted(
                         $client, 
                         $project, 
-                        $application->amount,
-                        "The project \"{$project->title}\" has been marked as completed. Thank you for using The Code Helper!"
+                        $emailData['amount'],
+                        "The project \"{$emailData['project_title']}\" has been marked as completed. Thank you for using The Code Helper!"
                     );
-                    \Log::info('Project completed email sent to client', ['user_id' => $client->id, 'email' => $client->email]);
+                    \Log::info('[acceptCompleted] ✅ Client email SENT', ['email' => $client->email]);
                 } catch (\Throwable $e) {
-                    \Log::error('Project completed email FAILED for client', ['user_id' => $client->id, 'email' => $client->email, 'error' => $e->getMessage()]);
+                    \Log::error('[acceptCompleted] ❌ Client email FAILED', ['email' => $client->email, 'error' => $e->getMessage()]);
                 }
+            } else {
+                \Log::error('[acceptCompleted] Client not found for email', ['id' => $emailData['client_id']]);
             }
-
-            return response()->json(['status' => true, 'message' => 'Project accepted successfully.']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['status' => false, 'message' => $e->getMessage()]);
         }
+
+        return response()->json(['status' => true, 'message' => 'Project accepted successfully.']);
     }
 
     public function cancel($application_id)
