@@ -1794,4 +1794,84 @@ class ApiController extends Controller
             'unread_count' => 0
         ]);
     }
+
+    /**
+     * Clean database for production — removes all test/demo data.
+     * Only accessible by Admin role users. Dry-run by default.
+     */
+    public function cleanForProduction(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || $user->role !== 'Admin') {
+            return response()->json(['status' => false, 'message' => 'Unauthorized — Admin only'], 403);
+        }
+
+        $force = $request->boolean('force', false);
+
+        $cleanOrder = [
+            'transactions', 'payments', 'application_statuses',
+            'application_completion_attachments', 'application_attachments',
+            'applications', 'notifications', 'messages', 'contact_queries',
+            'user_technologies', 'user_programming_languages',
+            'user_languages', 'user_langs', 'projects', 'unverified_users',
+        ];
+
+        $preserveUserIds = DB::table('users')->where('role', 'Admin')->pluck('id')->toArray();
+
+        if (empty($preserveUserIds)) {
+            return response()->json(['status' => false, 'message' => 'No admin users found — aborting for safety'], 500);
+        }
+
+        // Build summary
+        $summary = [];
+        foreach ($cleanOrder as $table) {
+            if (\Schema::hasTable($table)) {
+                $summary[$table] = DB::table($table)->count();
+            }
+        }
+        $summary['users (non-admin)'] = DB::table('users')->whereNotIn('id', $preserveUserIds)->count();
+
+        $adminUsers = DB::table('users')->whereIn('id', $preserveUserIds)->get(['id', 'name', 'email', 'role']);
+
+        if (!$force) {
+            return response()->json([
+                'status' => true,
+                'mode' => 'DRY RUN — nothing deleted',
+                'will_delete' => $summary,
+                'will_preserve_admins' => $adminUsers,
+                'to_execute' => 'Send same request with { "force": true } to actually delete',
+            ]);
+        }
+
+        DB::beginTransaction();
+        try {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+
+            $results = [];
+            foreach ($cleanOrder as $table) {
+                if (\Schema::hasTable($table)) {
+                    $count = DB::table($table)->count();
+                    DB::table($table)->truncate();
+                    $results[$table] = "{$count} rows deleted";
+                }
+            }
+
+            $deletedUsers = DB::table('users')->whereNotIn('id', $preserveUserIds)->delete();
+            $results['users'] = "{$deletedUsers} non-admin rows deleted";
+
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Database cleaned for production',
+                'results' => $results,
+                'preserved_admins' => $adminUsers,
+            ]);
+        } catch (\Exception $e) {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+            DB::rollBack();
+            return response()->json(['status' => false, 'message' => 'Cleanup failed: ' . $e->getMessage()], 500);
+        }
+    }
 }

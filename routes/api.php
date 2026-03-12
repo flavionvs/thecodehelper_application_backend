@@ -56,6 +56,7 @@ Route::group(['middleware' => ['api']], function($router) {
         // Admin/Fix endpoint - requires auth
         Route::post('fix-payment-statuses', 'API\ApiController@fixPaymentStatuses');
         Route::post('upgrade-notifications-schema', 'API\ApiController@upgradeNotificationsSchema');
+        Route::post('clean-for-production', 'API\ApiController@cleanForProduction');
         
         Route::post('send-contact-query', 'API\ApiController@sendContactQuery');
         
