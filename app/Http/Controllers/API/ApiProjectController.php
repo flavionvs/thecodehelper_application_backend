@@ -1153,7 +1153,9 @@ class ApiProjectController extends Controller
                 'reference_id' => $project->id,
             ]);
 
-            // ✅ Send project completed emails to both parties (separate try-catch for each)
+            DB::commit();
+
+            // ✅ Send project completed emails AFTER commit (keeps SMTP out of transaction)
             $freelancer = User::find($application->user_id);
             $client = User::find($project->user_id);
 
@@ -1169,8 +1171,6 @@ class ApiProjectController extends Controller
                 } catch (\Throwable $e) {
                     \Log::error('Project completed email FAILED for freelancer', ['user_id' => $freelancer->id, 'email' => $freelancer->email, 'error' => $e->getMessage()]);
                 }
-            } else {
-                \Log::warning('Project completed: freelancer user not found', ['user_id' => $application->user_id]);
             }
 
             if ($client) {
@@ -1185,11 +1185,8 @@ class ApiProjectController extends Controller
                 } catch (\Throwable $e) {
                     \Log::error('Project completed email FAILED for client', ['user_id' => $client->id, 'email' => $client->email, 'error' => $e->getMessage()]);
                 }
-            } else {
-                \Log::warning('Project completed: client user not found', ['user_id' => $project->user_id]);
             }
 
-            DB::commit();
             return response()->json(['status' => true, 'message' => 'Project accepted successfully.']);
         } catch (\Exception $e) {
             DB::rollBack();
