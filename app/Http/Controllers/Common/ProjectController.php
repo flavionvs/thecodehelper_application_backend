@@ -41,8 +41,16 @@ class ProjectController extends Controller
         if($request->ajax()){                    
             return $this->model->applicationDatatable($project_id);
         }            
-        $users = Application::groupBy('user_id')->get();    
-        $projects = Application::groupBy('project_id')->get();    
+        $users = Application::select('user_id')
+            ->groupBy('user_id')
+            ->with('user')
+            ->get()
+            ->filter(fn($item) => $item->user !== null);
+        $projects = Application::select('project_id')
+            ->groupBy('project_id')
+            ->with('project')
+            ->get()
+            ->filter(fn($item) => $item->project !== null);
        return view('common.project.application', compact('users','projects'));
     }
 
