@@ -25,7 +25,7 @@
     </p>
     
     <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 16px; color: #555555; line-height: 26px; margin: 0 0 30px 0; text-align: center;">
-        {{ $message ?? 'The project has been marked as completed. Thank you for using The Code Helper!' }}
+        {{ $custom_message ?? 'The project has been marked as completed. Thank you for using The Code Helper!' }}
     </p>
     
     <!-- Project Summary Box -->

@@ -141,7 +141,7 @@ class EmailService
                 'project_title' => $project->title,
                 'project_id' => $project->id,
                 'amount' => $amount,
-                'message' => $customMessage,
+                'custom_message' => $customMessage,
             ], function ($message) use ($user) {
                 $message->to($user->email)
                     ->subject('🏆 Project Completed - The Code Helper');
