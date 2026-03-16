@@ -87,14 +87,14 @@ class Project extends Model
     public function datatable()
     {
         $data = DB::table('projects')
-            ->join('users', 'users.id', 'projects.user_id')
-            ->join('categories', 'categories.id', 'projects.category_id')
+            ->leftJoin('users', 'users.id', 'projects.user_id')
+            ->leftJoin('categories', 'categories.id', 'projects.category_id')
             ->leftJoin('applications', 'applications.project_id', '=', 'projects.id')
             ->groupBy('projects.id')
             ->select(
                 'projects.*',
-                'categories.name as category',
-                'users.first_name as client',
+                DB::raw("COALESCE(categories.name, 'N/A') as category"),
+                DB::raw("COALESCE(users.first_name, 'Deleted User') as client"),
                 DB::raw('COUNT(applications.id) as application')
             );
 

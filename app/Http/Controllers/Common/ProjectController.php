@@ -102,10 +102,19 @@ class ProjectController extends Controller
 
     public function destroy($id){
         DB::BeginTransaction();
-        try{        
-            $delete = Project::find($id)->delete();
+        try{
+            $project = Project::find($id);
+            if (!$project) {
+                return response()->json(['status'=>false,'message'=> 'Project not found']);
+            }
+            // Force-delete related applications first (they use SoftDeletes, so
+            // a normal delete() only sets deleted_at — the FK row remains and blocks
+            // the project delete).
+            Application::where('project_id', $id)->forceDelete();
+            $project->delete();
             DB::commit();
         }catch(\Exception $e){
+            DB::rollBack();
             return response()->json(['status'=>false,'message'=> showError($e)]);
         }
         return response()->json(['status'=>true,'message'=> 'Project deleted successfully!']);
@@ -118,6 +127,8 @@ class ProjectController extends Controller
         }
         DB::BeginTransaction();
         try{
+            // Force-delete related applications first (they use SoftDeletes)
+            Application::whereIn('project_id', $ids)->forceDelete();
             Project::whereIn('id', $ids)->delete();
             DB::commit();
         }catch(\Exception $e){

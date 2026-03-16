@@ -488,6 +488,8 @@ class ApiProjectController extends Controller
             $project = Project::find($businessId);
 
             if ($project) {
+                // Force-delete related applications first (they use SoftDeletes)
+                Application::where('project_id', $businessId)->forceDelete();
                 $project->delete();
             }
 
