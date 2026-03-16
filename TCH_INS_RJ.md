@@ -166,7 +166,7 @@ VITE_API_BASE_URL=https://thecodehelper-api.azurewebsites.net
 | Role | Email | Password | User ID |
 |------|-------|----------|---------|
 | Client | `ranjans838@gmail.com` | `123456789` | 39 |
-| Freelancer | `testfreelancer@gmail.com` | `12345678` | 26 |
+| Freelancer | `pujaonesubs@gmail.com` | `12345678` | 26 |
 | Superadmin | `super-admin@gmail.com` | `12345678` | — |
 
 ---
