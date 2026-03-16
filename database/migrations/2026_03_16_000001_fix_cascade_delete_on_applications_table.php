@@ -1,48 +1,77 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 class FixCascadeDeleteOnApplicationsTable extends Migration
 {
     /**
-     * The original SQL dump created the applications FK without ON DELETE CASCADE.
-     * This migration drops and re-creates the constraint with cascade rules
-     * so that deleting a project properly removes its applications (and their
-     * downstream attachments, statuses, payments, and transactions).
+     * The live DB may have FK constraints without ON DELETE CASCADE.
+     * This migration drops and re-creates them with cascade rules using raw SQL
+     * to avoid constraint-name mismatches.
      */
     public function up()
     {
-        Schema::table('applications', function (Blueprint $table) {
-            $table->dropForeign('applications_project_id_foreign');
-            $table->foreign('project_id')
-                  ->references('id')
-                  ->on('projects')
-                  ->onDelete('cascade')
-                  ->onUpdate('cascade');
+        // Find and drop the existing project_id FK (whatever its name is)
+        $fks = DB::select("
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'applications'
+              AND COLUMN_NAME = 'project_id'
+              AND REFERENCED_TABLE_NAME = 'projects'
+        ");
 
-            $table->dropForeign('applications_user_id_foreign');
-            $table->foreign('user_id')
-                  ->references('id')
-                  ->on('users')
-                  ->onDelete('cascade')
-                  ->onUpdate('cascade');
-        });
+        foreach ($fks as $fk) {
+            DB::statement("ALTER TABLE `applications` DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
+        }
+
+        // Re-create with CASCADE
+        DB::statement("
+            ALTER TABLE `applications`
+            ADD CONSTRAINT `applications_project_id_foreign`
+            FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`)
+            ON DELETE CASCADE ON UPDATE CASCADE
+        ");
+
+        // Find and drop the existing user_id FK (whatever its name is)
+        $fks = DB::select("
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'applications'
+              AND COLUMN_NAME = 'user_id'
+              AND REFERENCED_TABLE_NAME = 'users'
+        ");
+
+        foreach ($fks as $fk) {
+            DB::statement("ALTER TABLE `applications` DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
+        }
+
+        // Re-create with CASCADE
+        DB::statement("
+            ALTER TABLE `applications`
+            ADD CONSTRAINT `applications_user_id_foreign`
+            FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+            ON DELETE CASCADE ON UPDATE CASCADE
+        ");
     }
 
     public function down()
     {
-        Schema::table('applications', function (Blueprint $table) {
-            $table->dropForeign(['project_id']);
-            $table->foreign('project_id')
-                  ->references('id')
-                  ->on('projects');
+        // Revert to non-cascading FKs
+        DB::statement("ALTER TABLE `applications` DROP FOREIGN KEY `applications_project_id_foreign`");
+        DB::statement("
+            ALTER TABLE `applications`
+            ADD CONSTRAINT `applications_project_id_foreign`
+            FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`)
+        ");
 
-            $table->dropForeign(['user_id']);
-            $table->foreign('user_id')
-                  ->references('id')
-                  ->on('users');
-        });
+        DB::statement("ALTER TABLE `applications` DROP FOREIGN KEY `applications_user_id_foreign`");
+        DB::statement("
+            ALTER TABLE `applications`
+            ADD CONSTRAINT `applications_user_id_foreign`
+            FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+        ");
     }
 }
