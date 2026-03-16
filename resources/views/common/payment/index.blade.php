@@ -10,7 +10,7 @@
                 <select id="client" class="form-control chosen">
                     <option value="">All</option>
                     @foreach ($clients as $item)                                            
-                        <option value="{{ $item->user_id }}">{{ $item->user->first_name }}</option>                                            
+                        <option value="{{ $item->user_id }}">{{ $item->user->first_name ?? 'Deleted User' }}</option>                                            
                     @endforeach
                 </select>
             </div>                                                                                   

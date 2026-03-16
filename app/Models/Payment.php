@@ -22,10 +22,10 @@ class Payment extends Model
     public function datatable()
     {
         $data = DB::table('payments')
-            ->join('users', 'users.id', 'payments.user_id')
+            ->leftJoin('users', 'users.id', 'payments.user_id')
             ->select(
                 'payments.*',
-                'users.first_name as username',
+                DB::raw("COALESCE(users.first_name, 'Deleted User') as username"),
             );
 
         if (request()->client) {
